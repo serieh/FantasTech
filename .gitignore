@@ -1,0 +1,27 @@
+# Rust build artifacts
+target/
+**/target/
+Cargo.lock.orig
+
+# Vendor binary installers and Windows binaries (~300MB)
+*.exe
+MK894/
+re-workspace/samples/installed/
+re-workspace/samples/installer/
+*.dll
+*.pak
+*.bin
+*.dat
+
+# Python caches and environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.pytest_cache/
+
+# OS and Editor metadata
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

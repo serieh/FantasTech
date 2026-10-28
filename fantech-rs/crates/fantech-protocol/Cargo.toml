@@ -1,0 +1,14 @@
+[package]
+name = "fantech-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Pure clean-room protocol serializer, parser, and framing for Fantech MK894"
+
+[dependencies]
+thiserror.workspace = true
+serde = { workspace = true, optional = true }
+
+[features]
+default = []
+serde = ["dep:serde"]

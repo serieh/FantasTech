@@ -1,0 +1,16 @@
+{
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "Clean-Room Engineering Team"
+            }
+        ],
+        "Category": "Hardware Control",
+        "Description": "Fantech MK894 Mechanical Keyboard RGB Lighting & Profile Controller",
+        "Icon": "input-keyboard-symbolic",
+        "Id": "org.kde.fantech.lighting",
+        "Name": "Fantech MK894 Lighting",
+        "Version": "1.0.0"
+    },
+    "KPackageStructure": "Plasma/Applet"
+}
