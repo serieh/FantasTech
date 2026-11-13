@@ -123,8 +123,8 @@ impl LightingMode {
                 | Self::StreamLeftToRight
                 | Self::Bloom
                 | Self::StreamUpToDown
+                | Self::Shuttle
                 | Self::Raindrop
-                | Self::Meteor
                 | Self::RippleFade
                 | Self::RippleStatic
                 | Self::Reactive
@@ -368,7 +368,12 @@ pub fn build_lighting_report(config: &LightingConfig) -> Result<ReportBuffer, Pr
         ((config.speed as f32 / 100.0) * 4.0).round().clamp(0.0, 4.0) as u8
     };
 
-    let (h, s, v) = rgb_to_hsv(config.color.r, config.color.g, config.color.b);
+    let (h, s, v) = if config.mode.supports_color() {
+        rgb_to_hsv(config.color.r, config.color.g, config.color.b)
+    } else {
+        (0, 0, 0)
+    };
+
     let (effective_mode, color_mode) = if config.mode == LightingMode::Static
         && config.color.r == 0
         && config.color.g == 0
@@ -379,8 +384,15 @@ pub fn build_lighting_report(config: &LightingConfig) -> Result<ReportBuffer, Pr
         match config.mode {
             LightingMode::Off => (0, 0),
             LightingMode::Static => (1, 1),
+            mode if !mode.supports_color() => (mode as u8, 0),
             _ => (config.mode as u8, config.color_mode as u8),
         }
+    };
+
+    let effective_direction = if config.mode.supports_direction() {
+        config.direction as u8
+    } else {
+        0
     };
 
     let payload_content = [
@@ -389,7 +401,7 @@ pub fn build_lighting_report(config: &LightingConfig) -> Result<ReportBuffer, Pr
         effective_mode,
         hw_brightness,
         hw_speed,
-        config.direction as u8,
+        effective_direction,
         color_mode,
         0x00,
         h,

@@ -600,6 +600,7 @@ pub(crate) fn dispatch_ipc_request(
                         let mut om = openrgb_matrix.lock().unwrap();
                         *om = matrix;
                     }
+                    let _ = dev.apply_lighting_config(&p.to_lighting_config());
                     dev.apply_matrix_canvas(&matrix)
                 } else {
                     let hw_cfg = p.to_lighting_config();

@@ -2040,6 +2040,16 @@ impl FantasTechApp {
                                     Color32::from_rgb(r, g, b)
                                 }
                             }
+                            3 => {
+                                // Pinwheel / Vortex rotation centered on keyboard (Spin mode)
+                                let dx = (vkey.x - 11.5) * 0.35;
+                                let dy = vkey.y - 2.75;
+                                let angle = dy.atan2(dx);
+                                let norm_angle = (angle / std::f32::consts::TAU + time * spd_factor * 0.25) % 1.0;
+                                let phase = if norm_angle < 0.0 { norm_angle + 1.0 } else { norm_angle };
+                                let (r, g, b) = hsv_to_rgb_simple(phase * 360.0, 0.95, 0.95);
+                                Color32::from_rgb(r, g, b)
+                            }
                             5 => {
                                 // Horizontal wave (direction 0 = Left->Right, direction 1 = Right->Left)
                                 let dir_sign = if self.direction == 1 { 1.0 } else { -1.0 };
@@ -2330,8 +2340,17 @@ impl FantasTechApp {
 
                             if ui.add(btn).on_hover_text(*name).clicked() {
                                 self.selected_mode = *mode_id;
+                                if *mode_id == 0 {
+                                    self.brightness = 0;
+                                } else if self.brightness == 0 {
+                                    self.brightness = 4;
+                                }
                                 if *mode_id == 1 {
                                     self.is_fixed_color = true;
+                                } else if let Ok(m) = LightingMode::from_u8(*mode_id) {
+                                    if !m.supports_color() {
+                                        self.is_fixed_color = false;
+                                    }
                                 }
                                 self.apply_lighting();
                             }
@@ -2471,24 +2490,7 @@ impl FantasTechApp {
                     }
                 }
 
-                ui.add_space(14.0);
-                ui.separator();
-                ui.add_space(10.0);
 
-                let btn_w = ui.available_width();
-                let off_btn = egui::Button::new("Turn All Off")
-                    .rounding(4.0)
-                    .min_size(Vec2::new(btn_w, 28.0));
-                if ui.add(off_btn).clicked() {
-                    self.selected_mode = 0;
-                    self.brightness = 0;
-                    if self.check_service() {
-                        let _ = send_ipc_request(&IpcRequest::LightingOff);
-                        self.status_message = "Service (IPC): Turned off keyboard backlighting".to_string();
-                    } else {
-                        self.apply_lighting();
-                    }
-                }
             });
         });
     }
@@ -2889,39 +2891,39 @@ impl FantasTechApp {
                             }
                         }
                     });
+                });
 
-                    ui.add_space(8.0);
-                    ui.separator();
-                    ui.add_space(6.0);
-                    ui.label(RichText::new("Designer Palettes:").strong());
-                    ui.add_space(3.0);
-                    let palettes = [
-                        ("miami", "Miami", [0, 240, 255]),
-                        ("terminal", "Matrix", [0, 255, 65]),
-                        ("flare", "Solar", [255, 69, 0]),
-                        ("vaporwave", "Vapor", [157, 78, 221]),
-                        ("frost", "Frost", [58, 134, 255]),
-                        ("blood_moon", "Blood", [217, 4, 41]),
-                        ("pastel", "Pastel", [183, 228, 199]),
-                        ("rainbow", "Rainbow", [255, 0, 0]),
-                    ];
-                    let pal_w = ((avail_swatches_w - 3.0 * 5.0) / 4.0).floor().clamp(22.0, 70.0);
-                    egui::Grid::new("designer_palettes_grid").spacing([5.0, 5.0]).show(ui, |ui| {
-                        for (idx, (p_id, p_lbl, c1)) in palettes.iter().enumerate() {
-                            let text_color = if *p_id == "pastel" || *p_id == "frost" { Color32::BLACK } else { Color32::WHITE };
-                            let btn = egui::Button::new(RichText::new(*p_lbl).size(11.0).strong().color(text_color))
-                                .fill(Color32::from_rgb(c1[0], c1[1], c1[2]))
-                                .stroke(Stroke::new(1.0_f32, Color32::from_rgb(100, 116, 139)))
-                                .rounding(4.0)
-                                .min_size(Vec2::new(pal_w, 24.0));
-                            if ui.add(btn).on_hover_text(format!("Apply '{}' designer color theme", p_lbl)).clicked() {
-                                self.apply_designer_palette(p_id);
-                            }
-                            if (idx + 1) % 4 == 0 {
-                                ui.end_row();
-                            }
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(6.0);
+                ui.label(RichText::new("Designer Palettes:").strong());
+                ui.add_space(3.0);
+                let palettes = [
+                    ("miami", "Miami", [0, 240, 255]),
+                    ("terminal", "Matrix", [0, 255, 65]),
+                    ("flare", "Solar", [255, 69, 0]),
+                    ("vaporwave", "Vapor", [157, 78, 221]),
+                    ("frost", "Frost", [58, 134, 255]),
+                    ("blood_moon", "Blood", [217, 4, 41]),
+                    ("pastel", "Pastel", [183, 228, 199]),
+                    ("rainbow", "Rainbow", [255, 0, 0]),
+                ];
+                let pal_w = ((ui.available_width() - 3.0 * 5.0) / 4.0).floor().clamp(22.0, 70.0);
+                egui::Grid::new("designer_palettes_grid").spacing([5.0, 5.0]).show(ui, |ui| {
+                    for (idx, (p_id, p_lbl, c1)) in palettes.iter().enumerate() {
+                        let text_color = if *p_id == "pastel" || *p_id == "frost" { Color32::BLACK } else { Color32::WHITE };
+                        let btn = egui::Button::new(RichText::new(*p_lbl).size(11.0).strong().color(text_color))
+                            .fill(Color32::from_rgb(c1[0], c1[1], c1[2]))
+                            .stroke(Stroke::new(1.0_f32, Color32::from_rgb(100, 116, 139)))
+                            .rounding(4.0)
+                            .min_size(Vec2::new(pal_w, 24.0));
+                        if ui.add(btn).on_hover_text(format!("Apply '{}' full-keyboard palette (switches to Custom Canvas)", p_lbl)).clicked() {
+                            self.apply_designer_palette(p_id);
                         }
-                    });
+                        if (idx + 1) % 4 == 0 {
+                            ui.end_row();
+                        }
+                    }
                 });
             });
         });
@@ -4156,10 +4158,18 @@ mod tests {
     #[test]
     fn test_fantastech_app_apply_lighting_profile() {
         let mut app = FantasTechApp::new();
+        app.custom_selected_keys.insert(44);
+        app.custom_select_all = true;
+
         app.apply_lighting_profile_by_id("cyberpunk");
         assert_eq!(app.selected_lighting_profile, "cyberpunk");
+        assert!(app.custom_selected_keys.is_empty(), "Selection must be cleared on profile switch");
+        assert!(!app.custom_select_all);
+        assert_eq!(app.key_colors[44], Color32::from_rgb(255, 255, 0)); // Yellow W key
+
         app.apply_lighting_profile_by_id("gaming");
         assert_eq!(app.selected_lighting_profile, "gaming");
+        assert_eq!(app.key_colors[44], Color32::from_rgb(255, 0, 0)); // Red W key in gaming
     }
 
     #[test]
@@ -4396,11 +4406,12 @@ mod tests {
         // Esc (left edge x=0.0) should be bright cyan
         assert_eq!(app.key_colors[0], Color32::from_rgb(0, 240, 255));
 
-        // 4. Designer Palettes in non-custom mode sets primary
+        // 4. Designer Palettes in non-custom mode switches to custom mode, clears, and applies across all keys
         app.selected_mode = 1; // Static
         app.apply_designer_palette("terminal");
+        assert_eq!(app.selected_mode, 16);
         assert_eq!(app.current_color, [0, 255, 65]);
-        assert!(app.is_fixed_color);
+        assert_eq!(app.key_colors[0], Color32::from_rgb(0, 59, 0));
 
         // 5. Direction support check for Mode 5 and Mode 7
         app.selected_mode = 5;
@@ -4414,13 +4425,14 @@ mod tests {
         assert!(!LightingMode::Spectrum.supports_color(), "ColorLoop (Spectrum) must not support fixed color");
         assert!(!LightingMode::Off.supports_color(), "LightOff must not support fixed color");
         assert!(!LightingMode::Rotate.supports_color(), "Spin must not support fixed color");
-        assert!(!LightingMode::Shuttle.supports_color(), "Cross must not support fixed color");
+        assert!(!LightingMode::Meteor.supports_color(), "Meteor must not support fixed color");
 
         // Modes that do support fixed color
         assert!(LightingMode::Static.supports_color());
         assert!(LightingMode::Breathing.supports_color());
         assert!(LightingMode::Bloom.supports_color());
         assert!(LightingMode::Tide.supports_color());
+        assert!(LightingMode::Shuttle.supports_color());
     }
 
     #[test]

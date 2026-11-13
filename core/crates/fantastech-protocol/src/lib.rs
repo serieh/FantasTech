@@ -475,5 +475,44 @@ mod tests {
         raw[0] = 0x06;
         assert!(parse_async_lighting_notification(&raw).unwrap().is_none());
     }
+
+    #[test]
+    fn test_spin_effect_and_unsupported_mode_sanitization() {
+        // Spin (Mode 3): Even if direction=1 and color_mode=FixedColor are requested,
+        // hardware report framing must force direction=0, color_mode=0, and (h,s,v)=(0,0,0)
+        let spin_cfg = LightingConfig {
+            zone: LightingZone::MainBacklight,
+            mode: LightingMode::Rotate,
+            brightness: 4,
+            speed: 3,
+            direction: AnimationDirection::LeftToRight,
+            color_mode: ColorMode::FixedColor,
+            color: RgbColor::new(255, 0, 128),
+        };
+        let rep = build_lighting_report(&spin_cfg).expect("build spin report");
+        let raw = rep.as_bytes();
+        assert_eq!(raw[1], opcodes::SET_LIGHT_CONFIG);
+        assert_eq!(raw[7], 3); // Mode 3 (Spin / Rotate)
+        assert_eq!(raw[8], 4); // Brightness 4
+        assert_eq!(raw[9], 3); // Speed 3
+        assert_eq!(raw[10], 0, "Spin direction must be sanitized to 0");
+        assert_eq!(raw[11], 0, "Spin color_mode must be sanitized to 0 (dynamic rainbow)");
+        assert_eq!(raw[13], 0, "Spin H must be sanitized to 0");
+        assert_eq!(raw[14], 0, "Spin S must be sanitized to 0");
+        assert_eq!(raw[15], 0, "Spin V must be sanitized to 0");
+
+        // Direction support check: Mode 5 must keep direction=1
+        let wave_cfg = LightingConfig {
+            zone: LightingZone::MainBacklight,
+            mode: LightingMode::StreamLeftToRight,
+            brightness: 4,
+            speed: 3,
+            direction: AnimationDirection::LeftToRight,
+            color_mode: ColorMode::FixedColor,
+            color: RgbColor::new(0, 255, 0),
+        };
+        let rep_wave = build_lighting_report(&wave_cfg).expect("build wave report");
+        assert_eq!(rep_wave.as_bytes()[10], 1, "Mode 5 must preserve direction 1");
+    }
 }
 
