@@ -776,6 +776,144 @@ impl FantasTechApp {
         self.apply_color_to_custom_selection([0, 0, 0]);
     }
 
+    pub(super) fn select_custom_key_group(&mut self, group: &str) {
+        self.custom_select_all = false;
+        self.custom_selected_keys.clear();
+        match group {
+            "wasd" => {
+                for &idx in &[44, 64, 65, 66] {
+                    self.custom_selected_keys.insert(idx);
+                }
+                self.status_message = "Selected WASD keys".to_string();
+            }
+            "arrows" => {
+                for &idx in &[99, 119, 120, 121] {
+                    self.custom_selected_keys.insert(idx);
+                }
+                self.status_message = "Selected Arrow keys".to_string();
+            }
+            "numpad" => {
+                for &idx in &[38, 39, 40, 41, 59, 60, 61, 62, 80, 81, 82, 101, 102, 103, 104, 122, 123, 124] {
+                    self.custom_selected_keys.insert(idx);
+                }
+                self.status_message = "Selected Numpad keys".to_string();
+            }
+            "fkeys" => {
+                self.custom_selected_keys.insert(0); // Esc
+                for idx in 1..=12 {
+                    self.custom_selected_keys.insert(idx);
+                }
+                self.status_message = "Selected Function row (F1-F12 + Esc)".to_string();
+            }
+            _ => {}
+        }
+    }
+
+    pub(super) fn apply_designer_palette(&mut self, palette_name: &str) {
+        let (primary, p_name) = match palette_name {
+            "miami" => ([0, 240, 255], "Cyberpunk Miami"),
+            "terminal" => ([0, 255, 65], "Matrix Terminal"),
+            "flare" => ([255, 69, 0], "Solar Flare"),
+            "vaporwave" => ([157, 78, 221], "Vaporwave Dusk"),
+            "frost" => ([58, 134, 255], "Arctic Frost"),
+            "blood_moon" => ([217, 4, 41], "Blood Moon"),
+            "pastel" => ([183, 228, 199], "Pastel Dream"),
+            "rainbow" => ([255, 0, 0], "Spectrum Rainbow"),
+            _ => ([0, 113, 207], "Designer Palette"),
+        };
+
+        self.current_color = primary;
+        self.record_used_color(primary);
+
+        if self.selected_mode == 16 {
+            // In Custom Matrix Canvas, compute per-key designer gradient across ANSI_104_KEYS
+            for vkey in ANSI_104_KEYS {
+                let idx = vkey.index as usize;
+                if idx >= SPARSE_KEY_COUNT {
+                    continue;
+                }
+                let t_col: f32 = (vkey.x / 22.0_f32).clamp(0.0_f32, 1.0_f32);
+                let t_row: f32 = (vkey.y / 5.35_f32).clamp(0.0_f32, 1.0_f32);
+                let rgb = match palette_name {
+                    "miami" => {
+                        // Cyan [0, 240, 255] -> Hot Pink [255, 0, 127]
+                        [
+                            (t_col * 255.0_f32).round() as u8,
+                            (240.0_f32 * (1.0_f32 - t_col)).round() as u8,
+                            (255.0_f32 * (1.0_f32 - t_col) + 127.0_f32 * t_col).round() as u8,
+                        ]
+                    }
+                    "terminal" => {
+                        // Forest green [0, 59, 0] -> Bright terminal green [0, 255, 65]
+                        [
+                            0,
+                            (59.0_f32 + t_row * (255.0_f32 - 59.0_f32)).round() as u8,
+                            (t_row * 65.0_f32).round() as u8,
+                        ]
+                    }
+                    "flare" => {
+                        // Flame Orange [255, 69, 0] -> Sunburst Gold [255, 215, 0]
+                        [
+                            255,
+                            (69.0_f32 + t_col * (215.0_f32 - 69.0_f32)).round() as u8,
+                            0,
+                        ]
+                    }
+                    "vaporwave" => {
+                        // Lilac Purple [157, 78, 221] -> Sky Blue [72, 202, 228]
+                        let t_diag: f32 = ((vkey.x + vkey.y * 3.0_f32) / 38.0_f32).clamp(0.0_f32, 1.0_f32);
+                        [
+                            (157.0_f32 * (1.0_f32 - t_diag) + 72.0_f32 * t_diag).round() as u8,
+                            (78.0_f32 * (1.0_f32 - t_diag) + 202.0_f32 * t_diag).round() as u8,
+                            (221.0_f32 * (1.0_f32 - t_diag) + 228.0_f32 * t_diag).round() as u8,
+                        ]
+                    }
+                    "frost" => {
+                        // Glacial Cyan [224, 251, 252] -> Ice Blue [58, 134, 255]
+                        [
+                            (224.0_f32 * (1.0_f32 - t_col) + 58.0_f32 * t_col).round() as u8,
+                            (251.0_f32 * (1.0_f32 - t_col) + 134.0_f32 * t_col).round() as u8,
+                            255,
+                        ]
+                    }
+                    "blood_moon" => {
+                        let is_mod = [0, 13, 27, 28, 42, 55, 69, 83, 84, 96, 98, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114].contains(&vkey.index);
+                        if is_mod {
+                            [25, 25, 25] // Deep Obsidian
+                        } else {
+                            [217, 4, 41] // Crimson Red
+                        }
+                    }
+                    "pastel" => {
+                        // Mint [183, 228, 199] -> Peach [255, 202, 212]
+                        [
+                            (183.0_f32 + t_col * (255.0_f32 - 183.0_f32)).round() as u8,
+                            (228.0_f32 * (1.0_f32 - t_col) + 202.0_f32 * t_col).round() as u8,
+                            (199.0_f32 * (1.0_f32 - t_col) + 212.0_f32 * t_col).round() as u8,
+                        ]
+                    }
+                    _ => {
+                        let hue = (vkey.x / 22.0_f32) * 360.0_f32;
+                        let (r, g, b) = hsv_to_rgb_simple(hue, 1.0, 1.0);
+                        [r, g, b]
+                    }
+                };
+                self.key_colors[idx] = Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
+                if let Some(mirror) = get_mirror_key_index(vkey.index) {
+                    if (mirror as usize) < SPARSE_KEY_COUNT {
+                        self.key_colors[mirror as usize] = self.key_colors[idx];
+                    }
+                }
+            }
+            self.apply_lighting();
+            self.status_message = format!("Applied '{}' designer palette across keyboard matrix", p_name);
+        } else {
+            self.is_fixed_color = true;
+            self.apply_lighting();
+            self.status_message = format!("Set color to '{}' primary", p_name);
+        }
+    }
+
     pub(super) fn apply_lighting(&mut self) {
         let mode = LightingMode::from_u8(self.selected_mode).unwrap_or(LightingMode::Spectrum);
         let color_mode = if self.is_fixed_color || mode == LightingMode::Static {
@@ -783,12 +921,17 @@ impl FantasTechApp {
         } else {
             ColorMode::DynamicSpectrum
         };
+        let dir = if self.direction == 1 {
+            AnimationDirection::LeftToRight
+        } else {
+            AnimationDirection::Default
+        };
         let config = LightingConfig {
             zone: LightingZone::MainBacklight,
             mode,
             brightness: self.brightness,
             speed: self.speed,
-            direction: AnimationDirection::Default,
+            direction: dir,
             color_mode,
             color: RgbColor::new(self.current_color[0], self.current_color[1], self.current_color[2]),
         };
@@ -819,7 +962,7 @@ impl FantasTechApp {
                 mode,
                 brightness: self.brightness,
                 speed: self.speed,
-                direction: 0,
+                direction: self.direction,
                 color_mode,
                 color: self.current_color,
             }) {

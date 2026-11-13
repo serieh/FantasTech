@@ -109,7 +109,7 @@ fn fit_keycap_text(text: &str, max_width: f32) -> (String, egui::FontId) {
     }
 }
 
-fn hsv_to_rgb_simple(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
+pub(crate) fn hsv_to_rgb_simple(h: f32, s: f32, v: f32) -> (u8, u8, u8) {
     let c = v * s;
     let h_prime = (h / 60.0) % 6.0;
     let x = c * (1.0 - ((h_prime % 2.0) - 1.0).abs());

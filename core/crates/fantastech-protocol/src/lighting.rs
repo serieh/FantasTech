@@ -139,9 +139,9 @@ impl LightingMode {
     }
 
     /// Whether this mode supports direction controls.
-    /// Hardware/vendor software does not support direction controls.
+    /// Mode 5 (StreamLeftToRight) and Mode 7 (StreamUpToDown) support direction flipping in hardware.
     pub fn supports_direction(&self) -> bool {
-        false
+        matches!(self, Self::StreamLeftToRight | Self::StreamUpToDown)
     }
 }
 
@@ -451,6 +451,113 @@ pub fn parse_light_config_response(buf: &ReportBuffer) -> Result<LightingConfig,
         color_mode,
         color,
     })
+}
+
+/// Builds the 64-byte USB Output Report to query the hardware default configuration for an effect (Opcode 0x16).
+pub fn build_effect_default_query_report(mode: u8) -> Result<ReportBuffer, ProtocolError> {
+    if mode > 16 {
+        return Err(ProtocolError::ParameterOutOfRange {
+            field: "lighting_mode",
+            value: mode as u32,
+            min: 0,
+            max: 16,
+        });
+    }
+    let mut report = ReportBuffer::new(opcodes::GET_EFFECT_DEFAULT_CONFIG);
+    report.set_byte(2, 0x03)?; // Length of query payload
+    report.set_byte(5, LightingZone::MainBacklight as u8)?;
+    report.set_byte(7, mode)?;
+    Ok(report)
+}
+
+/// Parses the 64-byte response from the keyboard to an effect default query (Opcode 0x16).
+pub fn parse_effect_default_response(buf: &ReportBuffer) -> Result<LightingConfig, ProtocolError> {
+    let raw = buf.as_bytes();
+    if (raw[0] != PROTOCOL_MAGIC && raw[0] != 0xAA) || raw[1] != opcodes::GET_EFFECT_DEFAULT_CONFIG {
+        return Err(ProtocolError::MalformedResponse {
+            opcode: raw[1],
+            detail: "Expected Magic 0x06/0xAA and Opcode 0x16 for effect default query response",
+        });
+    }
+
+    let zone = match raw[5] {
+        2 => LightingZone::SideStrips,
+        _ => LightingZone::MainBacklight,
+    };
+    let mode = LightingMode::from_u8(raw[7])?;
+    let brightness = raw[8];
+    let speed = raw[9];
+    let direction = match raw[10] {
+        1 => AnimationDirection::LeftToRight,
+        _ => AnimationDirection::Default,
+    };
+    let color_mode = if raw[11] == 1 {
+        ColorMode::FixedColor
+    } else {
+        ColorMode::DynamicSpectrum
+    };
+
+    let h = raw[13];
+    let s = raw[14];
+    let v = raw[15];
+    let color = hsv_to_rgb(h, s, v);
+
+    Ok(LightingConfig {
+        zone,
+        mode,
+        brightness,
+        speed,
+        direction,
+        color_mode,
+        color,
+    })
+}
+
+/// Parses an asynchronous hardware event report (Magic 0xAA, Sub-header 0xFA).
+/// When physical Fn shortcuts (`Fn + \`, `Fn + Up/Down`, `Fn + Left/Right`) are pressed on the keyboard,
+/// the MCU emits this 64-byte report autonomously to keep the host synchronized.
+pub fn parse_async_lighting_notification(raw: &[u8]) -> Result<Option<LightingConfig>, ProtocolError> {
+    if raw.len() < 16 {
+        return Ok(None);
+    }
+    if raw[0] != 0xAA || raw[1] != 0xFA {
+        return Ok(None);
+    }
+
+    let zone = match raw[5] {
+        2 => LightingZone::SideStrips,
+        _ => LightingZone::MainBacklight,
+    };
+    let mode = match LightingMode::from_u8(raw[7]) {
+        Ok(m) => m,
+        Err(_) => return Ok(None),
+    };
+    let brightness = raw[8];
+    let speed = raw[9];
+    let direction = match raw[10] {
+        1 => AnimationDirection::LeftToRight,
+        _ => AnimationDirection::Default,
+    };
+    let color_mode = if raw[11] == 1 {
+        ColorMode::FixedColor
+    } else {
+        ColorMode::DynamicSpectrum
+    };
+
+    let h = raw[13];
+    let s = raw[14];
+    let v = raw[15];
+    let color = hsv_to_rgb(h, s, v);
+
+    Ok(Some(LightingConfig {
+        zone,
+        mode,
+        brightness,
+        speed,
+        direction,
+        color_mode,
+        color,
+    }))
 }
 
 /// Builds a 64-byte USB Output Report for setting the static color of an individual key (Opcode 0x14).

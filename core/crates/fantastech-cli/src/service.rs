@@ -23,8 +23,8 @@ use fantastech_protocol::lighting::{
 use fantastech_protocol::openrgb::{
     build_openrgb_controller_data, normalize_brightness_to_levels, normalize_brightness_to_percent,
     parse_openrgb_set_mode, parse_openrgb_update_leds, parse_openrgb_update_single_led,
-    parse_openrgb_update_zone_leds, resolve_openrgb_mode, scale_rgb, OpenRgbHeader,
-    MODE_COLORS_NONE, MODE_COLORS_RANDOM,
+    parse_openrgb_update_zone_leds, resolve_openrgb_mode_named, scale_rgb, OpenRgbHeader,
+    MODE_COLORS_NONE, MODE_COLORS_RANDOM, OPENRGB_DIR_DOWN, OPENRGB_DIR_RIGHT,
     NET_PACKET_ID_REQUEST_CONTROLLER_COUNT, NET_PACKET_ID_REQUEST_CONTROLLER_DATA,
     NET_PACKET_ID_REQUEST_PROTOCOL_VERSION, NET_PACKET_ID_RGBCONTROLLER_SAVEMODE,
     NET_PACKET_ID_RGBCONTROLLER_SETCUSTOMMODE, NET_PACKET_ID_RGBCONTROLLER_SETMODE,
@@ -432,7 +432,7 @@ pub fn handle_openrgb_client(
             }
             NET_PACKET_ID_RGBCONTROLLER_SETMODE | NET_PACKET_ID_RGBCONTROLLER_SAVEMODE => {
                 if let Ok(mode_info) = parse_openrgb_set_mode(&data_buf) {
-                    let mode = resolve_openrgb_mode(mode_info.mode_idx, mode_info.value);
+                    let mode = resolve_openrgb_mode_named(mode_info.mode_idx, mode_info.value, &mode_info.name);
                     openrgb_mode.store(mode as u8, Ordering::SeqCst);
 
                     let b_pct = normalize_brightness_to_percent(mode_info.brightness);
@@ -468,15 +468,27 @@ pub fn handle_openrgb_client(
                         } else {
                             ColorMode::FixedColor
                         };
+                        let hw_direction = if mode_info.direction == 1
+                            || mode_info.direction == OPENRGB_DIR_RIGHT
+                            || mode_info.direction == OPENRGB_DIR_DOWN
+                        {
+                            AnimationDirection::LeftToRight
+                        } else {
+                            AnimationDirection::Default
+                        };
                         let hw_cfg = LightingConfig {
                             zone: LightingZone::MainBacklight,
                             mode,
                             brightness: hw_brightness,
                             speed: hw_speed,
-                            direction: AnimationDirection::Default,
+                            direction: hw_direction,
                             color_mode,
                             color,
                         };
+                        if mode == LightingMode::Static {
+                            let mut om = cached_matrix.lock().unwrap();
+                            *om = [color; SPARSE_KEY_COUNT];
+                        }
                         let mut dev = dev_control.lock().unwrap();
                         let _ = dev.apply_lighting_config(&hw_cfg);
                     }
@@ -1721,6 +1733,35 @@ mod tests {
 
         let m = last_mat.lock().unwrap().take().expect("matrix canvas applied in direct mode");
         assert_eq!(m[0], RgbColor::new(0, 255, 0));
+
+        // 4. Test directional wave mode with OPENRGB_DIR_RIGHT (Mode 5 - Horizontal Stream)
+        let mut set_mode_wave = Vec::new();
+        set_mode_wave.extend_from_slice(&3u32.to_le_bytes()); // mode_idx = 3 (Horizontal Wave)
+        let wave_name = "Rainbow Wave (Horizontal)\0";
+        set_mode_wave.extend_from_slice(&(wave_name.len() as u16).to_le_bytes());
+        set_mode_wave.extend_from_slice(wave_name.as_bytes());
+        set_mode_wave.extend_from_slice(&5i32.to_le_bytes()); // value = 5
+        set_mode_wave.extend_from_slice(&0u32.to_le_bytes()); // flags
+        set_mode_wave.extend_from_slice(&[0u8; 24]);
+        set_mode_wave.extend_from_slice(&2u32.to_le_bytes()); // speed
+        set_mode_wave.extend_from_slice(&100u32.to_le_bytes()); // brightness
+        set_mode_wave.extend_from_slice(&OPENRGB_DIR_RIGHT.to_le_bytes()); // direction = Right
+        set_mode_wave.extend_from_slice(&0u32.to_le_bytes()); // color_mode
+        set_mode_wave.extend_from_slice(&0u16.to_le_bytes()); // colors count
+
+        let mut wave_body = (set_mode_wave.len() as u32 + 4).to_le_bytes().to_vec();
+        wave_body.extend_from_slice(&set_mode_wave);
+
+        let hdr = OpenRgbHeader::new(0, NET_PACKET_ID_RGBCONTROLLER_SETMODE, wave_body.len() as u32);
+        client.write_all(&hdr.to_bytes()).unwrap();
+        client.write_all(&wave_body).unwrap();
+        client.flush().unwrap();
+
+        std::thread::sleep(Duration::from_millis(50));
+
+        let wave_cfg = last_cfg.lock().unwrap().take().expect("wave config applied");
+        assert_eq!(wave_cfg.mode, LightingMode::StreamLeftToRight);
+        assert_eq!(wave_cfg.direction, AnimationDirection::LeftToRight);
 
         drop(client);
     }

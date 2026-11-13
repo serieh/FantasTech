@@ -372,12 +372,16 @@ mod tests {
         let data_ud = build_openrgb_controller_data(keys, colors, 7, 100, 0);
         assert!(data_ud.len() > 200);
 
-        // Ensure lighting animation modes do not advertise direction controls (not supported by hardware)
-        assert!(!LightingMode::StreamLeftToRight.supports_direction());
-        assert!(!LightingMode::StreamUpToDown.supports_direction());
+        // Ensure lighting animation modes advertise direction controls for modes 5 and 7
+        assert!(LightingMode::StreamLeftToRight.supports_direction());
+        assert!(LightingMode::StreamUpToDown.supports_direction());
         for mode_val in 0..=16 {
             if let Ok(mode) = LightingMode::from_u8(mode_val) {
-                assert!(!mode.supports_direction());
+                if mode == LightingMode::StreamLeftToRight || mode == LightingMode::StreamUpToDown {
+                    assert!(mode.supports_direction());
+                } else {
+                    assert!(!mode.supports_direction());
+                }
             }
         }
     }
@@ -415,6 +419,61 @@ mod tests {
         for &b in &bytes[3..] {
             assert_eq!(b, 0x00);
         }
+    }
+
+    #[test]
+    fn test_direction_support_and_effect_default_query() {
+        assert!(LightingMode::StreamLeftToRight.supports_direction());
+        assert!(LightingMode::StreamUpToDown.supports_direction());
+        assert!(!LightingMode::Static.supports_direction());
+        assert!(!LightingMode::Spectrum.supports_direction());
+
+        let query = build_effect_default_query_report(5).expect("build query");
+        let q_bytes = query.as_bytes();
+        assert_eq!(q_bytes[0], 0x06);
+        assert_eq!(q_bytes[1], opcodes::GET_EFFECT_DEFAULT_CONFIG);
+        assert_eq!(q_bytes[5], 1); // Main zone
+        assert_eq!(q_bytes[7], 5); // Mode 5
+
+        // Mock response
+        let mut resp_buf = ReportBuffer::new(opcodes::GET_EFFECT_DEFAULT_CONFIG);
+        resp_buf.set_byte(5, 1).unwrap();
+        resp_buf.set_byte(7, 5).unwrap();
+        resp_buf.set_byte(8, 4).unwrap(); // brightness
+        resp_buf.set_byte(9, 2).unwrap(); // speed
+        resp_buf.set_byte(10, 1).unwrap(); // direction reverse
+        resp_buf.set_byte(11, 0).unwrap(); // dynamic spectrum
+        let parsed = parse_effect_default_response(&resp_buf).expect("parse response");
+        assert_eq!(parsed.mode, LightingMode::StreamLeftToRight);
+        assert_eq!(parsed.brightness, 4);
+        assert_eq!(parsed.direction, AnimationDirection::LeftToRight);
+    }
+
+    #[test]
+    fn test_async_lighting_notification_parser() {
+        // Valid notification
+        let mut raw = [0u8; 64];
+        raw[0] = 0xAA;
+        raw[1] = 0xFA;
+        raw[5] = 1; // main zone
+        raw[7] = 2; // breathing
+        raw[8] = 3; // brightness
+        raw[9] = 1; // speed
+        raw[10] = 0; // direction
+        raw[11] = 1; // fixed color
+        raw[13] = 0; // H
+        raw[14] = 255; // S
+        raw[15] = 255; // V
+        let parsed = parse_async_lighting_notification(&raw).unwrap().expect("parsed async event");
+        assert_eq!(parsed.mode, LightingMode::Breathing);
+        assert_eq!(parsed.brightness, 3);
+        assert_eq!(parsed.speed, 1);
+        assert_eq!(parsed.color_mode, ColorMode::FixedColor);
+        assert_eq!(parsed.color.r, 255);
+
+        // Irrelevant packet
+        raw[0] = 0x06;
+        assert!(parse_async_lighting_notification(&raw).unwrap().is_none());
     }
 }
 

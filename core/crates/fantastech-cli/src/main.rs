@@ -54,7 +54,8 @@ use fantastech_protocol::macro_mem::MacroMemoryTable;
 use fantastech_protocol::openrgb::{
     build_openrgb_controller_data, normalize_brightness_to_levels, normalize_brightness_to_percent,
     parse_openrgb_set_mode, parse_openrgb_update_leds, parse_openrgb_update_single_led,
-    parse_openrgb_update_zone_leds, resolve_openrgb_mode, scale_rgb, OpenRgbHeader,
+    parse_openrgb_update_zone_leds, resolve_openrgb_mode_named, scale_rgb, OpenRgbHeader,
+    OPENRGB_DIR_DOWN, OPENRGB_DIR_RIGHT,
     NET_PACKET_ID_REQUEST_CONTROLLER_COUNT, NET_PACKET_ID_REQUEST_CONTROLLER_DATA,
     NET_PACKET_ID_REQUEST_PROTOCOL_VERSION, NET_PACKET_ID_RGBCONTROLLER_SAVEMODE,
     NET_PACKET_ID_RGBCONTROLLER_SETCUSTOMMODE, NET_PACKET_ID_RGBCONTROLLER_SETMODE,
@@ -2087,7 +2088,7 @@ fn run_openrgb_server<T: Transport>(
                 NET_PACKET_ID_RGBCONTROLLER_SETMODE | NET_PACKET_ID_RGBCONTROLLER_SAVEMODE => {
                     match parse_openrgb_set_mode(&payload) {
                         Ok(mode_update) => {
-                            let hw_mode = resolve_openrgb_mode(mode_update.mode_idx, mode_update.value);
+                            let hw_mode = resolve_openrgb_mode_named(mode_update.mode_idx, mode_update.value, &mode_update.name);
                             active_mode = hw_mode as u8;
                             active_direction = mode_update.direction;
 
@@ -2188,12 +2189,20 @@ fn run_openrgb_server<T: Transport>(
                                 } else {
                                     ColorMode::DynamicSpectrum
                                 };
+                                let hw_direction = if mode_update.direction == 1
+                                    || mode_update.direction == OPENRGB_DIR_RIGHT
+                                    || mode_update.direction == OPENRGB_DIR_DOWN
+                                {
+                                    AnimationDirection::LeftToRight
+                                } else {
+                                    AnimationDirection::Default
+                                };
                                 let config = LightingConfig {
                                     zone: LightingZone::MainBacklight,
                                     mode: hw_mode,
                                     brightness: hw_brightness,
                                     speed: mode_update.speed.min(4) as u8,
-                                    direction: AnimationDirection::Default,
+                                    direction: hw_direction,
                                     color_mode,
                                     color: col,
                                 };

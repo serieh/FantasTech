@@ -56,6 +56,7 @@ pub mod opcodes {
     pub const SET_SINGLE_KEYMAP: u8 = 0x10;
     pub const STREAM_RGB_MATRIX: u8 = 0x12;
     pub const SET_SINGLE_KEY_LED: u8 = 0x14;
+    pub const GET_EFFECT_DEFAULT_CONFIG: u8 = 0x16;
     pub const SELECT_PROFILE: u8 = 0xFB;
     pub const SET_SLEEP_TIMEOUT: u8 = 0xFC;
 

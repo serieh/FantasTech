@@ -245,7 +245,7 @@ pub fn build_openrgb_controller_data(
     current_colors: &[RgbColor],
     current_mode: u8,
     current_brightness: u8,
-    _current_direction: u32,
+    current_direction: u32,
 ) -> Vec<u8> {
     let mut payload = Vec::with_capacity(4096);
 
@@ -270,8 +270,8 @@ pub fn build_openrgb_controller_data(
         ("Direct (Per-Key Custom)", 16, MODE_FLAG_HAS_BRIGHTNESS | MODE_FLAG_HAS_PER_LED_COLOR, 0, 0, MODE_COLORS_PER_LED, 0, 0, 0),
         ("Static (Constant)", 1, MODE_FLAG_HAS_BRIGHTNESS | MODE_FLAG_HAS_MODE_SPECIFIC_COLOR, 0, 0, MODE_COLORS_MODE_SPECIFIC, 0, 1, 1),
         ("Breathing", 2, MODE_FLAG_HAS_SPEED | MODE_FLAG_HAS_BRIGHTNESS | MODE_FLAG_HAS_MODE_SPECIFIC_COLOR | MODE_FLAG_HAS_RANDOM_COLOR, 0, 4, MODE_COLORS_MODE_SPECIFIC, 2, 1, 1),
-        ("Rainbow Wave (Horizontal)", 5, MODE_FLAG_HAS_SPEED | MODE_FLAG_HAS_BRIGHTNESS | MODE_FLAG_HAS_MODE_SPECIFIC_COLOR | MODE_FLAG_HAS_RANDOM_COLOR, 0, 4, MODE_COLORS_MODE_SPECIFIC, 2, 1, 1),
-        ("Rainbow Wave (Vertical)", 7, MODE_FLAG_HAS_SPEED | MODE_FLAG_HAS_BRIGHTNESS | MODE_FLAG_HAS_MODE_SPECIFIC_COLOR | MODE_FLAG_HAS_RANDOM_COLOR, 0, 4, MODE_COLORS_MODE_SPECIFIC, 2, 1, 1),
+        ("Rainbow Wave (Horizontal)", 5, MODE_FLAG_HAS_SPEED | MODE_FLAG_HAS_BRIGHTNESS | MODE_FLAG_HAS_MODE_SPECIFIC_COLOR | MODE_FLAG_HAS_RANDOM_COLOR | MODE_FLAG_HAS_DIRECTION_LR, 0, 4, MODE_COLORS_MODE_SPECIFIC, 2, 1, 1),
+        ("Rainbow Wave (Vertical)", 7, MODE_FLAG_HAS_SPEED | MODE_FLAG_HAS_BRIGHTNESS | MODE_FLAG_HAS_MODE_SPECIFIC_COLOR | MODE_FLAG_HAS_RANDOM_COLOR | MODE_FLAG_HAS_DIRECTION_UD, 0, 4, MODE_COLORS_MODE_SPECIFIC, 2, 1, 1),
         ("Spectrum Cycle", 4, MODE_FLAG_HAS_SPEED | MODE_FLAG_HAS_BRIGHTNESS, 0, 4, MODE_COLORS_NONE, 2, 0, 0),
         ("Rotate Wheel", 3, MODE_FLAG_HAS_SPEED | MODE_FLAG_HAS_BRIGHTNESS, 0, 4, MODE_COLORS_NONE, 2, 0, 0),
         ("Bloom Pulse", 6, MODE_FLAG_HAS_SPEED | MODE_FLAG_HAS_BRIGHTNESS | MODE_FLAG_HAS_MODE_SPECIFIC_COLOR | MODE_FLAG_HAS_RANDOM_COLOR, 0, 4, MODE_COLORS_MODE_SPECIFIC, 2, 1, 1),
@@ -303,8 +303,14 @@ pub fn build_openrgb_controller_data(
         payload.extend_from_slice(&spd.to_le_bytes()); // speed
         let brt_val = normalize_brightness_to_percent(current_brightness as u32) as u32;
         payload.extend_from_slice(&brt_val.to_le_bytes()); // brightness (protocol version 3+)
-        // Hardware/vendor software does not support direction controls; always report 0
-        payload.extend_from_slice(&0u32.to_le_bytes()); // direction
+        let mode_dir = if *val == 5 && current_direction == 1 {
+            OPENRGB_DIR_RIGHT
+        } else if *val == 7 && current_direction == 1 {
+            OPENRGB_DIR_DOWN
+        } else {
+            OPENRGB_DIR_LEFT
+        };
+        payload.extend_from_slice(&mode_dir.to_le_bytes()); // direction
         payload.extend_from_slice(&col_mode.to_le_bytes()); // color_mode
         payload.extend_from_slice(&(*col_max as u16).to_le_bytes()); // colors count
         for _ in 0..*col_max {
@@ -513,6 +519,52 @@ pub fn parse_openrgb_set_mode(payload: &[u8]) -> Result<OpenRgbModeUpdate, Proto
     })
 }
 
+/// Resolves the effective `LightingMode` from an OpenRGB mode index, mode value, and profile/mode name.
+/// When OpenRGB applies an Active Profile from a `.orp` file, `mode_val` is often 0 or omitted in JSON,
+/// while `name` carries the human-readable effect title.
+pub fn resolve_openrgb_mode_named(mode_idx: i32, mode_val: i32, name: &str) -> LightingMode {
+    let clean = name.trim().to_lowercase();
+    if !clean.is_empty() {
+        if clean.contains("direct") || clean.contains("custom") || clean.contains("canvas") {
+            return LightingMode::CustomMatrixCanvas;
+        } else if clean.contains("static") || clean.contains("solid") || clean.contains("constant") {
+            return LightingMode::Static;
+        } else if clean.contains("breath") {
+            return LightingMode::Breathing;
+        } else if clean.contains("horizontal") || clean.contains("left to right") || clean.contains("streamlr") {
+            return LightingMode::StreamLeftToRight;
+        } else if clean.contains("vertical") || clean.contains("up to down") || clean.contains("streamud") {
+            return LightingMode::StreamUpToDown;
+        } else if clean.contains("spectrum") || clean.contains("rainbow cycle") {
+            return LightingMode::Spectrum;
+        } else if clean.contains("rotate") || clean.contains("wheel") {
+            return LightingMode::Rotate;
+        } else if clean.contains("bloom") || clean.contains("pulse") {
+            return LightingMode::Bloom;
+        } else if clean.contains("shuttle") || clean.contains("back and forth") {
+            return LightingMode::Shuttle;
+        } else if clean.contains("rain") {
+            return LightingMode::Raindrop;
+        } else if clean.contains("meteor") || clean.contains("star") {
+            return LightingMode::Meteor;
+        } else if clean.contains("ripple fade") || clean.contains("ripple off") {
+            return LightingMode::RippleFade;
+        } else if clean.contains("ripple static") || clean.contains("ripple on") {
+            return LightingMode::RippleStatic;
+        } else if clean.contains("reactive") || clean.contains("glow") {
+            return LightingMode::Reactive;
+        } else if clean.contains("grid") || clean.contains("crosshair") {
+            return LightingMode::GridRipple;
+        } else if clean.contains("tide") || clean.contains("ocean") {
+            return LightingMode::Tide;
+        } else if clean == "off" || clean.contains("light off") {
+            return LightingMode::Off;
+        }
+    }
+
+    resolve_openrgb_mode(mode_idx, mode_val)
+}
+
 /// Resolves the effective `LightingMode` from an OpenRGB mode index and mode value.
 /// When OpenRGB applies an Active Profile, `mode_val` is typically 0 (not serialized in profile JSON),
 /// so the mode must be resolved using `mode_idx`.
@@ -577,5 +629,17 @@ mod tests {
         assert_eq!(resolve_openrgb_mode(16, 0), LightingMode::Off);
         // Invalid index defaults to CustomMatrixCanvas
         assert_eq!(resolve_openrgb_mode(99, 0), LightingMode::CustomMatrixCanvas);
+    }
+
+    #[test]
+    fn test_resolve_openrgb_mode_named() {
+        assert_eq!(resolve_openrgb_mode_named(99, 0, "Rainbow Wave (Horizontal)"), LightingMode::StreamLeftToRight);
+        assert_eq!(resolve_openrgb_mode_named(99, 0, "Rainbow Wave (Vertical)"), LightingMode::StreamUpToDown);
+        assert_eq!(resolve_openrgb_mode_named(99, 0, "Static (Constant)"), LightingMode::Static);
+        assert_eq!(resolve_openrgb_mode_named(99, 0, "Breathing"), LightingMode::Breathing);
+        assert_eq!(resolve_openrgb_mode_named(99, 0, "Direct (Per-Key Custom)"), LightingMode::CustomMatrixCanvas);
+        assert_eq!(resolve_openrgb_mode_named(99, 0, "Off"), LightingMode::Off);
+        // Fallback to mode_idx when name is unknown
+        assert_eq!(resolve_openrgb_mode_named(1, 0, ""), LightingMode::Static);
     }
 }

@@ -15,7 +15,7 @@ use fantastech_protocol::keymap::{
     parse_keymap_chunk_response, KeyAction, KeyLayer,
 };
 use fantastech_protocol::lighting::{
-    build_lighting_report, build_single_key_color, AnimationDirection, ColorMode, LightingConfig, LightingMode,
+    build_lighting_report, build_matrix_packets, build_single_key_color, AnimationDirection, ColorMode, LightingConfig, LightingMode,
     LightingZone, RgbColor,
 };
 use fantastech_protocol::macro_mem::{
@@ -471,8 +471,7 @@ impl<T: Transport> Device<T, ReversibleAccess> {
             std::thread::sleep(std::time::Duration::from_millis(30));
         }
 
-        // Physical MK894 hardware (PID 0xFE9C) requires sequential Opcode 0x14 reports
-        // paced at 12-15ms. We write all keys and dual-switch mirrors reliably.
+        // Transmit differential Opcode 0x14 reports paced at 3ms
         for &(key_idx, color) in &diff {
             let report = build_single_key_color(key_idx, color)?;
             self.transport.write_report(report.as_bytes())?;
@@ -486,20 +485,47 @@ impl<T: Transport> Device<T, ReversibleAccess> {
                     self.color_cache[mirror as usize] = Some(color);
                 }
             }
-            std::thread::sleep(std::time::Duration::from_millis(12));
+            std::thread::sleep(std::time::Duration::from_millis(3));
         }
 
         Ok(None)
     }
 
-    /// Sets all 104 physical keys via sequential Opcode 0x14 streaming and commits Custom Matrix Canvas.
+    /// Sets physical keys via fast differential streaming and commits Custom Matrix Canvas.
+    /// Employs 54-byte aligned Opcode 0x12 chunks for large batches (>15 keys, ~56ms)
+    /// and low-latency Opcode 0x14 packets (3ms pacing) for small updates (<=15 keys).
     pub fn apply_matrix_keys(&mut self, matrix: &[RgbColor; SPARSE_KEY_COUNT]) -> Result<Option<DryRunRecord>, DeviceError> {
         if self.dry_run_mode {
             return Ok(Some(DryRunRecord {
                 buffer: [0u8; REPORT_LENGTH],
-                explanation: format!("Set {} physical keys via Opcode 0x14 and activate Custom Matrix Canvas", KEY_DEFINITIONS.len()),
+                explanation: format!("Set {} physical keys via fast matrix streaming and activate Custom Matrix Canvas", KEY_DEFINITIONS.len()),
                 safety_tier: "WRITE-REVERSIBLE",
             }));
+        }
+
+        // Synchronize dual-pad stabilizer mirrors in memory
+        let mut synchronized_matrix = *matrix;
+        for key_def in KEY_DEFINITIONS.iter() {
+            let idx = key_def.index;
+            if let Some(mirror) = get_mirror_key_index(idx) {
+                if (mirror as usize) < SPARSE_KEY_COUNT {
+                    synchronized_matrix[mirror as usize] = synchronized_matrix[idx as usize];
+                }
+            }
+        }
+
+        // Calculate dirty keys against color cache
+        let mut dirty_keys = Vec::new();
+        for key_def in KEY_DEFINITIONS.iter() {
+            let idx = key_def.index as usize;
+            if self.color_cache[idx] != Some(synchronized_matrix[idx]) {
+                dirty_keys.push((key_def.index, synchronized_matrix[idx]));
+            }
+        }
+
+        // If no keys changed and we're already in canvas mode, no USB traffic is needed
+        if dirty_keys.is_empty() && self.current_mode == Some(LightingMode::CustomMatrixCanvas) {
+            return Ok(None);
         }
 
         // Switch to CustomMatrixCanvas mode if not already active
@@ -514,38 +540,49 @@ impl<T: Transport> Device<T, ReversibleAccess> {
                 color: RgbColor::new(0, 0, 0),
             };
             self.set_lighting(&config)?;
-            std::thread::sleep(std::time::Duration::from_millis(30));
+            std::thread::sleep(std::time::Duration::from_millis(15));
         }
 
-        // Transmit sequential Opcode 0x14 reports for all 104 ANSI physical keys + mirror slots
-        for key_def in KEY_DEFINITIONS.iter() {
-            let idx = key_def.index;
-            let color = matrix[idx as usize];
-            let report = build_single_key_color(idx, color)?;
-            self.transport.write_report(report.as_bytes())?;
-            self.color_cache[idx as usize] = Some(color);
+        if dirty_keys.len() <= 15 {
+            // Low-latency differential streaming via Opcode 0x14 (3ms pacing)
+            for (idx, color) in dirty_keys {
+                let report = build_single_key_color(idx, color)?;
+                self.transport.write_report(report.as_bytes())?;
+                self.color_cache[idx as usize] = Some(color);
 
-            if let Some(mirror) = get_mirror_key_index(idx) {
-                let m_report = build_single_key_color(mirror, color)?;
-                self.transport.write_report(m_report.as_bytes())?;
-                if (mirror as usize) < SPARSE_KEY_COUNT {
-                    self.color_cache[mirror as usize] = Some(color);
+                if let Some(mirror) = get_mirror_key_index(idx) {
+                    let m_report = build_single_key_color(mirror, color)?;
+                    self.transport.write_report(m_report.as_bytes())?;
+                    if (mirror as usize) < SPARSE_KEY_COUNT {
+                        self.color_cache[mirror as usize] = Some(color);
+                    }
                 }
+                std::thread::sleep(std::time::Duration::from_millis(3));
             }
-            std::thread::sleep(std::time::Duration::from_millis(12));
-        }
+        } else {
+            // High-throughput 54-byte aligned bulk streaming via Opcode 0x12 (8ms pacing, 56ms total)
+            let packets = build_matrix_packets(&synchronized_matrix)?;
+            for pkt in &packets {
+                self.transport.write_report(pkt.as_bytes())?;
+                std::thread::sleep(std::time::Duration::from_millis(8));
+            }
 
-        // Mode 16 commit latch
-        let commit_cfg = LightingConfig {
-            zone: LightingZone::MainBacklight,
-            mode: LightingMode::CustomMatrixCanvas,
-            brightness: self.current_brightness,
-            speed: 0,
-            direction: AnimationDirection::Default,
-            color_mode: ColorMode::FixedColor,
-            color: RgbColor::new(0, 0, 0),
-        };
-        self.set_lighting(&commit_cfg)?;
+            // Mode 16 commit latch
+            let commit_cfg = LightingConfig {
+                zone: LightingZone::MainBacklight,
+                mode: LightingMode::CustomMatrixCanvas,
+                brightness: self.current_brightness,
+                speed: 0,
+                direction: AnimationDirection::Default,
+                color_mode: ColorMode::FixedColor,
+                color: RgbColor::new(0, 0, 0),
+            };
+            self.set_lighting(&commit_cfg)?;
+
+            for (i, &col) in synchronized_matrix.iter().enumerate() {
+                self.color_cache[i] = Some(col);
+            }
+        }
 
         Ok(None)
     }
@@ -963,6 +1000,53 @@ mod tests {
         assert_eq!(reports[0][1], opcodes::SET_SINGLE_KEY_LED);
         assert_eq!(reports[0][3], 44 * 3);
         assert_eq!(reports[0][8], 255); // R
+    }
+
+    #[test]
+    fn test_apply_matrix_keys_differential_and_bulk() {
+        // 1. Bulk update: all keys changed (> 15 keys)
+        let mock = MockTransport::new();
+        let dev = Device::new_read_only(mock);
+        let mut rev_dev = dev.into_reversible();
+        let matrix = [RgbColor::new(100, 150, 200); SPARSE_KEY_COUNT];
+        rev_dev.apply_matrix_keys(&matrix).expect("apply bulk matrix");
+
+        let reports = rev_dev.into_read_only().into_transport().outgoing;
+        // Mode switch (0x0B) + 7 bulk chunks (0x12) + commit latch (0x0B) = 9 reports
+        assert_eq!(reports.len(), 9);
+        assert_eq!(reports[0][1], opcodes::SET_LIGHT_CONFIG);
+        for r in &reports[1..8] {
+            assert_eq!(r[1], opcodes::STREAM_RGB_MATRIX);
+        }
+        assert_eq!(reports[8][1], opcodes::SET_LIGHT_CONFIG);
+
+        // 2. Zero-diff update: exact same matrix produces 0 reports
+        let mock2 = MockTransport::new();
+        let dev2 = Device::new_read_only(mock2);
+        let mut rev_dev2 = dev2.into_reversible();
+        rev_dev2.current_mode = Some(LightingMode::CustomMatrixCanvas);
+        rev_dev2.set_all_color_cache(RgbColor::new(100, 150, 200));
+        rev_dev2.apply_matrix_keys(&matrix).expect("apply identical matrix");
+        let reports2 = rev_dev2.into_read_only().into_transport().outgoing;
+        assert_eq!(reports2.len(), 0);
+
+        // 3. Small diff update: 2 keys changed (<= 15 keys)
+        let mock3 = MockTransport::new();
+        let dev3 = Device::new_read_only(mock3);
+        let mut rev_dev3 = dev3.into_reversible();
+        rev_dev3.current_mode = Some(LightingMode::CustomMatrixCanvas);
+        rev_dev3.set_all_color_cache(RgbColor::new(100, 150, 200));
+
+        let mut diff_matrix = matrix;
+        diff_matrix[44] = RgbColor::new(255, 0, 0); // 'W' (no mirror)
+        diff_matrix[45] = RgbColor::new(0, 255, 0); // 'E' (no mirror)
+        rev_dev3.apply_matrix_keys(&diff_matrix).expect("apply small diff");
+
+        let reports3 = rev_dev3.into_read_only().into_transport().outgoing;
+        // Exactly 2 Opcode 0x14 packets, no 0x0B mode switch, no 0x12 bulk stream
+        assert_eq!(reports3.len(), 2);
+        assert_eq!(reports3[0][1], opcodes::SET_SINGLE_KEY_LED);
+        assert_eq!(reports3[1][1], opcodes::SET_SINGLE_KEY_LED);
     }
 
     #[test]

@@ -1886,6 +1886,19 @@ impl FantasTechApp {
                 if ui.button("Deselect All").on_hover_text("Clear key selection").clicked() {
                     self.deselect_all_custom_keys();
                 }
+                if ui.button("WASD").on_hover_text("Select WASD movement keys").clicked() {
+                    self.select_custom_key_group("wasd");
+                }
+                if ui.button("Arrows").on_hover_text("Select Arrow keys").clicked() {
+                    self.select_custom_key_group("arrows");
+                }
+                if ui.button("Numpad").on_hover_text("Select numeric keypad cluster").clicked() {
+                    self.select_custom_key_group("numpad");
+                }
+                if ui.button("F-Keys").on_hover_text("Select Function row (F1-F12 + Esc)").clicked() {
+                    self.select_custom_key_group("fkeys");
+                }
+                ui.separator();
                 if ui.button(RichText::new("Paint Selected").color(Color32::from_rgb(0, 220, 255)).strong())
                     .on_hover_text("Apply currently selected color to all selected keys")
                     .clicked()
@@ -1999,7 +2012,7 @@ impl FantasTechApp {
                             if is_dark { Color32::from_rgb(148, 163, 184) } else { Color32::from_rgb(71, 85, 105) },
                             Stroke::new(1.0_f32, if hover { Color32::from_rgb(0, 210, 255) } else if is_dark { Color32::from_rgb(40, 53, 74) } else { Color32::from_rgb(203, 213, 225) }),
                         )
-                    } else if self.is_fixed_color || self.selected_mode == 1 {
+                    } else if self.selected_mode == 1 || (self.is_fixed_color && self.selected_mode != 2 && self.selected_mode != 5 && self.selected_mode != 7) {
                         let base = Color32::from_rgb(self.current_color[0], self.current_color[1], self.current_color[2]);
                         painter.circle_filled(key_rect.center(), key_rect.width() * 0.44, base.gamma_multiply(0.25));
                         let lum = (base.r() as u32 * 299 + base.g() as u32 * 587 + base.b() as u32 * 114) / 1000;
@@ -2007,10 +2020,68 @@ impl FantasTechApp {
                         let border_color = if hover { Color32::WHITE } else { base };
                         (base, txt, Stroke::new(1.5_f32, border_color))
                     } else {
-                        // Smooth physical gradient from left to right across physical 23.0U span
-                        let ratio = (vkey.x / 23.0).clamp(0.0, 1.0);
-                        let (r, g, b) = hsv_to_rgb_simple(ratio * 360.0, 0.9, 0.95);
-                        let col = Color32::from_rgb(r, g, b);
+                        // Dynamic hardware animation software preview (30-60 FPS live canvas)
+                        ui.ctx().request_repaint_after(std::time::Duration::from_millis(33));
+                        let time = ui.input(|i| i.time) as f32;
+                        let spd_factor = (self.speed as f32 + 1.0) * 1.5;
+                        let col = match self.selected_mode {
+                            2 => {
+                                // Breathing pulse
+                                let pulse = ((time * spd_factor).sin() * 0.45 + 0.55).clamp(0.08, 1.0);
+                                if self.is_fixed_color {
+                                    Color32::from_rgb(
+                                        (self.current_color[0] as f32 * pulse) as u8,
+                                        (self.current_color[1] as f32 * pulse) as u8,
+                                        (self.current_color[2] as f32 * pulse) as u8,
+                                    )
+                                } else {
+                                    let hue = (time * spd_factor * 15.0) % 360.0;
+                                    let (r, g, b) = hsv_to_rgb_simple(hue, 1.0, pulse);
+                                    Color32::from_rgb(r, g, b)
+                                }
+                            }
+                            5 => {
+                                // Horizontal wave (direction 0 = Left->Right, direction 1 = Right->Left)
+                                let dir_sign = if self.direction == 1 { 1.0 } else { -1.0 };
+                                let phase = (vkey.x / 23.0 + time * spd_factor * 0.25 * dir_sign) % 1.0;
+                                let norm_phase = if phase < 0.0 { phase + 1.0 } else { phase };
+                                if self.is_fixed_color {
+                                    let wave = (norm_phase * std::f32::consts::TAU).sin() * 0.45 + 0.55;
+                                    Color32::from_rgb(
+                                        (self.current_color[0] as f32 * wave) as u8,
+                                        (self.current_color[1] as f32 * wave) as u8,
+                                        (self.current_color[2] as f32 * wave) as u8,
+                                    )
+                                } else {
+                                    let (r, g, b) = hsv_to_rgb_simple(norm_phase * 360.0, 0.95, 0.95);
+                                    Color32::from_rgb(r, g, b)
+                                }
+                            }
+                            7 => {
+                                // Vertical wave (direction 0 = Up->Down, direction 1 = Down->Up)
+                                let dir_sign = if self.direction == 1 { 1.0 } else { -1.0 };
+                                let phase = (vkey.y / 5.5 + time * spd_factor * 0.35 * dir_sign) % 1.0;
+                                let norm_phase = if phase < 0.0 { phase + 1.0 } else { phase };
+                                if self.is_fixed_color {
+                                    let wave = (norm_phase * std::f32::consts::TAU).sin() * 0.45 + 0.55;
+                                    Color32::from_rgb(
+                                        (self.current_color[0] as f32 * wave) as u8,
+                                        (self.current_color[1] as f32 * wave) as u8,
+                                        (self.current_color[2] as f32 * wave) as u8,
+                                    )
+                                } else {
+                                    let (r, g, b) = hsv_to_rgb_simple(norm_phase * 360.0, 0.95, 0.95);
+                                    Color32::from_rgb(r, g, b)
+                                }
+                            }
+                            _ => {
+                                // Spectrum cycle / dynamic rotation
+                                let ratio = (vkey.x / 23.0 + time * spd_factor * 0.2) % 1.0;
+                                let norm_ratio = if ratio < 0.0 { ratio + 1.0 } else { ratio };
+                                let (r, g, b) = hsv_to_rgb_simple(norm_ratio * 360.0, 0.9, 0.95);
+                                Color32::from_rgb(r, g, b)
+                            }
+                        };
                         painter.circle_filled(key_rect.center(), key_rect.width() * 0.44, col.gamma_multiply(0.20));
                         let border_color = if hover { Color32::WHITE } else { col };
                         (col, Color32::WHITE, Stroke::new(1.5_f32, border_color))
@@ -2366,6 +2437,38 @@ impl FantasTechApp {
                 ui.spacing_mut().slider_width = slider_bar_w;
                 if ui.add(Slider::new(&mut self.speed, 0..=4).show_value(false).trailing_fill(true)).changed() {
                     self.apply_lighting();
+                }
+
+                if mode_enum.supports_direction() {
+                    ui.add_space(8.0);
+                    ui.label(RichText::new("Wave Direction:").strong());
+                    ui.add_space(2.0);
+                    let (opt0, opt1) = if mode_enum == LightingMode::StreamLeftToRight {
+                        ("◀ Left to Right", "Right to Left ▶")
+                    } else {
+                        ("▲ Up to Down", "Down to Up ▼")
+                    };
+                    let mut dir_changed = false;
+                    let dir_btn_w = ((ui.available_width() - 8.0) / 2.0).max(60.0);
+                    ui.horizontal(|ui| {
+                        let btn0 = egui::Button::new(if self.direction == 0 { RichText::new(opt0).strong().color(Color32::WHITE) } else { RichText::new(opt0) })
+                            .fill(if self.direction == 0 { Color32::from_rgb(0, 113, 207) } else { if is_dark { Color32::from_rgb(30, 41, 59) } else { Color32::from_rgb(226, 232, 240) } })
+                            .min_size(Vec2::new(dir_btn_w, 24.0));
+                        if ui.add(btn0).clicked() {
+                            self.direction = 0;
+                            dir_changed = true;
+                        }
+                        let btn1 = egui::Button::new(if self.direction == 1 { RichText::new(opt1).strong().color(Color32::WHITE) } else { RichText::new(opt1) })
+                            .fill(if self.direction == 1 { Color32::from_rgb(0, 113, 207) } else { if is_dark { Color32::from_rgb(30, 41, 59) } else { Color32::from_rgb(226, 232, 240) } })
+                            .min_size(Vec2::new(dir_btn_w, 24.0));
+                        if ui.add(btn1).clicked() {
+                            self.direction = 1;
+                            dir_changed = true;
+                        }
+                    });
+                    if dir_changed {
+                        self.apply_lighting();
+                    }
                 }
 
                 ui.add_space(14.0);
@@ -2787,38 +2890,38 @@ impl FantasTechApp {
                         }
                     });
 
-                    if self.selected_mode == 16 {
-                        ui.add_space(8.0);
-                        ui.separator();
-                        ui.add_space(6.0);
-                        ui.label(RichText::new("Canvas Presets:").strong());
-                        ui.horizontal_wrapped(|ui| {
-                            if ui.button("WASD").clicked() {
-                                for (i, c) in self.key_colors.iter_mut().enumerate() {
-                                    if i == 0 || i == 43 || i == 44 || i == 64 || i == 65 || i == 66 || i == 110 || i == 111 {
-                                        *c = Color32::from_rgb(229, 62, 62);
-                                    } else {
-                                        *c = Color32::from_rgb(0, 0, 0);
-                                    }
-                                }
-                                self.apply_lighting();
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(6.0);
+                    ui.label(RichText::new("Designer Palettes:").strong());
+                    ui.add_space(3.0);
+                    let palettes = [
+                        ("miami", "Miami", [0, 240, 255]),
+                        ("terminal", "Matrix", [0, 255, 65]),
+                        ("flare", "Solar", [255, 69, 0]),
+                        ("vaporwave", "Vapor", [157, 78, 221]),
+                        ("frost", "Frost", [58, 134, 255]),
+                        ("blood_moon", "Blood", [217, 4, 41]),
+                        ("pastel", "Pastel", [183, 228, 199]),
+                        ("rainbow", "Rainbow", [255, 0, 0]),
+                    ];
+                    let pal_w = ((avail_swatches_w - 3.0 * 5.0) / 4.0).floor().clamp(22.0, 70.0);
+                    egui::Grid::new("designer_palettes_grid").spacing([5.0, 5.0]).show(ui, |ui| {
+                        for (idx, (p_id, p_lbl, c1)) in palettes.iter().enumerate() {
+                            let text_color = if *p_id == "pastel" || *p_id == "frost" { Color32::BLACK } else { Color32::WHITE };
+                            let btn = egui::Button::new(RichText::new(*p_lbl).size(11.0).strong().color(text_color))
+                                .fill(Color32::from_rgb(c1[0], c1[1], c1[2]))
+                                .stroke(Stroke::new(1.0_f32, Color32::from_rgb(100, 116, 139)))
+                                .rounding(4.0)
+                                .min_size(Vec2::new(pal_w, 24.0));
+                            if ui.add(btn).on_hover_text(format!("Apply '{}' designer color theme", p_lbl)).clicked() {
+                                self.apply_designer_palette(p_id);
                             }
-                            if ui.button("Cyber").clicked() {
-                                self.apply_lighting_profile_by_id("cyberpunk");
+                            if (idx + 1) % 4 == 0 {
+                                ui.end_row();
                             }
-                            if ui.button("Matrix").clicked() {
-                                self.apply_lighting_profile_by_id("matrix");
-                            }
-                            if ui.button("Wave").clicked() {
-                                for (idx, c) in self.key_colors.iter_mut().enumerate() {
-                                    let col_ratio = (idx % 21) as f32 / 21.0;
-                                    let (r, g, b) = hsv_to_rgb_simple(col_ratio * 360.0, 1.0, 0.95);
-                                    *c = Color32::from_rgb(r, g, b);
-                                }
-                                self.apply_lighting();
-                            }
-                        });
-                    }
+                        }
+                    });
                 });
             });
         });
@@ -4262,6 +4365,47 @@ mod tests {
         app.turn_off_custom_selection();
         assert_eq!(app.key_colors[111], Color32::BLACK);
         assert_eq!(app.key_colors[110], Color32::BLACK);
+    }
+
+    #[test]
+    fn test_custom_key_group_selection_and_designer_palettes() {
+        let mut app = FantasTechApp::new();
+        let temp_dir = std::env::temp_dir().join(format!("test_pal_{}", std::process::id()));
+        app.profile_manager = ProfileManager::new(Some(temp_dir));
+
+        // 1. Group selection: WASD
+        app.select_custom_key_group("wasd");
+        assert_eq!(app.custom_selected_keys.len(), 4);
+        assert!(app.custom_selected_keys.contains(&44)); // W
+        assert!(app.custom_selected_keys.contains(&64)); // A
+        assert!(app.custom_selected_keys.contains(&65)); // S
+        assert!(app.custom_selected_keys.contains(&66)); // D
+
+        // 2. Group selection: Arrows
+        app.select_custom_key_group("arrows");
+        assert_eq!(app.custom_selected_keys.len(), 4);
+        assert!(app.custom_selected_keys.contains(&99));  // Up
+        assert!(app.custom_selected_keys.contains(&119)); // Left
+        assert!(app.custom_selected_keys.contains(&120)); // Down
+        assert!(app.custom_selected_keys.contains(&121)); // Right
+
+        // 3. Designer Palettes: Miami in Custom mode (16)
+        app.selected_mode = 16;
+        app.apply_designer_palette("miami");
+        assert_eq!(app.current_color, [0, 240, 255]);
+        // Esc (left edge x=0.0) should be bright cyan
+        assert_eq!(app.key_colors[0], Color32::from_rgb(0, 240, 255));
+
+        // 4. Designer Palettes in non-custom mode sets primary
+        app.selected_mode = 1; // Static
+        app.apply_designer_palette("terminal");
+        assert_eq!(app.current_color, [0, 255, 65]);
+        assert!(app.is_fixed_color);
+
+        // 5. Direction support check for Mode 5 and Mode 7
+        app.selected_mode = 5;
+        app.direction = 1; // Reverse
+        assert_eq!(app.direction, 1);
     }
 
     #[test]
