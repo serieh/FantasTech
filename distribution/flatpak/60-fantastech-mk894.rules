@@ -1,0 +1,9 @@
+# Fantech MK894 Maxpower II RGB Mechanical Keyboard (USB VID 0x36AE, PID 0xFE9C)
+# Grants non-root access to console user via systemd uaccess tag
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="36ae", ATTRS{idProduct}=="fe9c", TAG+="uaccess", MODE="0660"
+
+# Fantech MK894 IAP Bootloader Recovery Mode (USB VID 0x36AE, PID 0xFEAB)
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="36ae", ATTRS{idProduct}=="feab", TAG+="uaccess", MODE="0660"
+
+# Evdev volume knob interface for volume runaway debouncing
+SUBSYSTEM=="input", ATTRS{idVendor}=="36ae", ATTRS{idProduct}=="fe9c", TAG+="uaccess", MODE="0660"

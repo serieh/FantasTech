@@ -1,0 +1,40 @@
+[workspace]
+members = [
+    "crates/fantastech-protocol",
+    "crates/fantastech-transport",
+    "crates/fantastech-device",
+    "crates/fantastech-emulator",
+    "crates/fantastech-core",
+    "crates/fantastech-cli",
+    "crates/fantastech-gui",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.5"
+authors = ["Ahmad Serieh <ahmadserieh.official@gmail.com>"]
+edition = "2021"
+license = "Apache-2.0"
+
+[workspace.dependencies]
+thiserror = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+clap = { version = "4.5", features = ["derive", "cargo"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+sha2 = "0.10"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+# Preserving symbol tables prevents Windows Defender ML from misclassifying the PE binary as a packed malware stub
+strip = "none"
+
+[patch.crates-io]
+pollster = { path = "vendor/pollster" }
+d3d12 = { path = "vendor/d3d12" }
+range-alloc = { path = "vendor/range-alloc" }

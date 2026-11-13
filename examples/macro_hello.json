@@ -1,0 +1,14 @@
+{
+  "name": "Type Hello",
+  "slot": 0,
+  "loop_mode": 0,
+  "repeat": 1,
+  "steps": [
+    { "action": "click", "name": "H", "delay_ms": 20 },
+    { "action": "click", "name": "E", "delay_ms": 20 },
+    { "action": "click", "name": "L", "delay_ms": 20 },
+    { "action": "click", "name": "L", "delay_ms": 20 },
+    { "action": "click", "name": "O", "delay_ms": 20 },
+    { "action": "click", "name": "Space", "delay_ms": 20 }
+  ]
+}

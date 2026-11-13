@@ -1,9 +1,0 @@
-[Desktop Entry]
-Name=Fantech MK894 Keyboard Control
-Comment=RGB Lighting, Macro, and Profile Manager for Fantech MK894
-Exec=fantech-gui
-Icon=input-keyboard-symbolic
-Terminal=false
-Type=Application
-Categories=Settings;HardwareSettings;
-Keywords=rgb;keyboard;fantech;openrgb;

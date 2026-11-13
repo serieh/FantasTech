@@ -1,19 +1,31 @@
-# Rust build artifacts
+# Build outputs and compilation artifacts
 target/
 **/target/
+dist/
+**/dist/
 Cargo.lock.orig
 
-# Vendor binary installers and Windows binaries (~300MB)
+# Flatpak build system caches
+.flatpak-builder/
+**/.flatpak-builder/
+flatpak-build/
+flatpak-repo/
+
+# Binary distributions & package outputs
 *.exe
-MK894/
-re-workspace/samples/installed/
-re-workspace/samples/installer/
 *.dll
-*.pak
+*.so
+*.dylib
+*.deb
+*.flatpak
+*.dmg
+*.tar.gz
+*.zip
 *.bin
 *.dat
+*.pak
 
-# Python caches and environments
+# Python caches and virtual environments
 __pycache__/
 *.py[cod]
 *$py.class
@@ -25,3 +37,6 @@ __pycache__/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local vendor archive and proprietary samples (see archive/INVENTORY.md)
+archive/

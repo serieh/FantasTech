@@ -1,0 +1,61 @@
+app-id: org.fantastech.FantasTech
+runtime: org.freedesktop.Platform
+runtime-version: '26.08'
+sdk: org.freedesktop.Platform
+default-branch: stable
+command: fantastech
+
+finish-args:
+  # Display servers
+  - --socket=x11
+  - --socket=wayland
+  - --share=ipc
+  # Hardware USB HID access for keyboard communication (/dev/hidraw*)
+  - --device=all
+  # Localhost networking for OpenRGB SDK server (port 6742)
+  - --share=network
+  # System tray integration (StatusNotifierItem)
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --own-name=org.kde.StatusNotifierItem-2-1
+  - --own-name=org.kde.StatusNotifierItem-2-2
+  - --own-name=org.kde.StatusNotifierItem-3-1
+  - --own-name=org.kde.StatusNotifierItem-3-2
+  - --own-name=org.kde.StatusNotifierItem-4-1
+  - --own-name=org.kde.StatusNotifierItem-4-2
+  - --own-name=org.freedesktop.StatusNotifierItem-2-1
+  - --own-name=org.freedesktop.StatusNotifierItem-2-2
+  - --own-name=org.freedesktop.StatusNotifierItem-3-1
+  - --own-name=org.freedesktop.StatusNotifierItem-3-2
+  - --talk-name=org.freedesktop.Notifications
+  # Allow autostart desktop entry creation on user login
+  - --filesystem=xdg-config/autostart:create
+  # Persist user profiles and config
+  - --persist=.config/fantastech
+
+modules:
+  - name: fantastech
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 fantastech /app/bin/fantastech
+      - ln -sf /app/bin/fantastech /app/bin/fantastech-ctl
+      - install -Dm644 org.fantastech.FantasTech.desktop /app/share/applications/org.fantastech.FantasTech.desktop
+      - install -Dm644 Yarny_512.png /app/share/icons/hicolor/512x512/apps/org.fantastech.FantasTech.png
+      - install -Dm644 Yarny_256.png /app/share/icons/hicolor/256x256/apps/org.fantastech.FantasTech.png
+      - install -Dm644 Yarny_128.png /app/share/icons/hicolor/128x128/apps/org.fantastech.FantasTech.png
+      - install -Dm644 Yarny_64.png /app/share/icons/hicolor/64x64/apps/org.fantastech.FantasTech.png
+      - install -Dm644 Yarny_32.png /app/share/icons/hicolor/32x32/apps/org.fantastech.FantasTech.png
+    sources:
+      - type: file
+        path: ../../core/target/release/fantastech
+      - type: file
+        path: org.fantastech.FantasTech.desktop
+      - type: file
+        path: ../../assets/icons/Yarny_512.png
+      - type: file
+        path: ../../assets/icons/Yarny_256.png
+      - type: file
+        path: ../../assets/icons/Yarny_128.png
+      - type: file
+        path: ../../assets/icons/Yarny_64.png
+      - type: file
+        path: ../../assets/icons/Yarny_32.png

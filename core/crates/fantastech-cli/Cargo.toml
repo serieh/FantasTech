@@ -1,0 +1,28 @@
+[package]
+name = "fantastech-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Command-line interface and unified background service for FantasTech"
+
+[[bin]]
+name = "fantastech"
+path = "src/main.rs"
+
+[dependencies]
+fantastech-protocol = { path = "../fantastech-protocol" }
+fantastech-transport = { path = "../fantastech-transport" }
+fantastech-device = { path = "../fantastech-device" }
+fantastech-core = { path = "../fantastech-core" }
+fantastech-emulator = { path = "../fantastech-emulator" }
+fantastech-gui = { path = "../fantastech-gui" }
+serde.workspace = true
+serde_json.workspace = true
+clap.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+libc = "0.2"
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = { version = "5.19", default-features = false, features = ["tokio"] }
+tokio = { version = "1.0", features = ["rt", "time"] }

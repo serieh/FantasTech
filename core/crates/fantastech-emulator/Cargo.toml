@@ -1,0 +1,16 @@
+[package]
+name = "fantastech-emulator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Virtual MK894 USB HID hardware emulator and golden-trace replay harness"
+
+[dependencies]
+fantastech-protocol = { path = "../fantastech-protocol" }
+fantastech-core = { path = "../fantastech-core" }
+fantastech-transport = { path = "../fantastech-transport" }
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+fantastech-device = { path = "../fantastech-device" }

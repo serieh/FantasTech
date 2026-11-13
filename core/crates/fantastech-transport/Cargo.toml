@@ -1,0 +1,15 @@
+[package]
+name = "fantastech-transport"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Hardware transport abstraction for Linux hidraw and mock testing"
+
+[dependencies]
+fantastech-protocol = { path = "../fantastech-protocol" }
+thiserror.workspace = true
+tracing.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+rustix = { version = "0.38", features = ["event", "fs"] }

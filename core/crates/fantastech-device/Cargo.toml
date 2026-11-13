@@ -1,0 +1,15 @@
+[package]
+name = "fantastech-device"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Type-state safety engine and high-level device handle for Fantech MK894"
+
+[dependencies]
+fantastech-protocol = { path = "../fantastech-protocol", features = ["serde"] }
+fantastech-transport = { path = "../fantastech-transport" }
+fantastech-core = { path = "../fantastech-core" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

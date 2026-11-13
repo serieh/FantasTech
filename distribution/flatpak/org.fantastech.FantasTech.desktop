@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=FantasTech
+Comment=Fantech MK894 Maxpower II RGB Keyboard Driver & Control Center
+Exec=fantastech
+Icon=org.fantastech.FantasTech
+Terminal=false
+Categories=Utility;HardwareSettings;
+Keywords=Keyboard;RGB;Lighting;Macro;Fantech;MK894;Driver;
+StartupWMClass=org.fantastech.FantasTech

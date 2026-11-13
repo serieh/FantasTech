@@ -1,0 +1,15 @@
+[package]
+name = "fantastech-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "High-level profile management, key mapping tables, and 4KB macro compiler for FantasTech"
+
+[dependencies]
+fantastech-protocol = { path = "../fantastech-protocol", features = ["serde"] }
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+tracing.workspace = true
+sha2.workspace = true

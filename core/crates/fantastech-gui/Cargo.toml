@@ -1,0 +1,37 @@
+[package]
+name = "fantastech-gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Native graphical interface for FantasTech"
+
+[lib]
+name = "fantastech_gui"
+path = "src/lib.rs"
+
+[[bin]]
+name = "fantastech-gui"
+path = "src/main.rs"
+
+[dependencies]
+fantastech-protocol = { path = "../fantastech-protocol" }
+fantastech-transport = { path = "../fantastech-transport" }
+fantastech-device = { path = "../fantastech-device" }
+fantastech-core = { path = "../fantastech-core" }
+fantastech-emulator = { path = "../fantastech-emulator" }
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+rfd = "0.17"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Window-system backends:
+# - Windows uses wgpu (DirectX 12/DirectX 11 + Microsoft WARP software fallback)
+# - Linux uses wgpu + Wayland/X11 windowing
+[target.'cfg(target_os = "windows")'.dependencies]
+eframe = { version = "0.29", default-features = false, features = ["default_fonts", "wgpu"] }
+wgpu = { version = "22.1", features = ["dx12"] }
+
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+eframe = { version = "0.29", default-features = false, features = ["default_fonts", "wgpu", "wayland", "x11"] }

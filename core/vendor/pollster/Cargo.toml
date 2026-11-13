@@ -1,0 +1,10 @@
+[package]
+name = "pollster"
+version = "0.3.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "A synchronous, blocking executor for futures"
+
+[lib]
+name = "pollster"
+path = "src/lib.rs"

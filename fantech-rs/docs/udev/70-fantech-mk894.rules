@@ -1,9 +1,0 @@
-# Udev rules for Fantech MK894 Maxpower II Mechanical Keyboard
-# Only grants unprivileged user access to Interface 02 (Vendor Configuration Interface)
-# Leaves Interface 00 (Boot Keyboard) and Interface 01 (Consumer Keys) under standard system security.
-
-# Target Model: Fantech MK894 (AK107) - Vendor ID 0x36AE, Product ID 0xFE9C, Interface 02
-KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{id/vendor}=="36ae", ATTRS{id/product}=="fe9c", ENV{ID_USB_INTERFACE_NUM}=="02", TAG+="uaccess", MODE="0666"
-
-# Variant Model: Fantech AK110-DS - Vendor ID 0x36AE, Product ID 0xFEAB, Interface 02
-KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{id/vendor}=="36ae", ATTRS{id/product}=="feab", ENV{ID_USB_INTERFACE_NUM}=="02", TAG+="uaccess", MODE="0666"

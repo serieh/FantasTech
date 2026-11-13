@@ -1,191 +1,171 @@
-# Fantech MK894 Maxpower II — Safe Linux Driver & Protocol Suite
+# FantasTech — Cross-Platform Driver & Control Suite for Fantech MK894
 
-Clean-room reverse-engineered driver, protocol specification, CLI tool (`fantech-ctl`), OpenRGB SDK server, virtual emulator, and GUI for the **Fantech MK894 Maxpower II Mechanical Keyboard** (USB Vendor ID `0x36AE`, Product ID `0xFE9C`).
-
----
-
-## 🔒 Clean-Room Safety & Architecture Guarantees
-
-* **`#![forbid(unsafe_code)]`**: Every crate in the workspace strictly compiles under `#![forbid(unsafe_code)]`.
-* **Zero Firmware Modification**: Operates purely over standard Linux USB HID (`/dev/hidraw`) interfaces without modifying original bootloaders or non-volatile firmware code.
-* **Banned DFU / Bootloader Jumping**: Opcodes `0x5A` and `0x55` (which trigger internal ROM In-Application Programming bootloader execution) are statically and dynamically rejected by `fantech-protocol` to guarantee no accidental bricking.
-* **Volatile & Reversible Lighting**: Per-key RGB colors and lighting modes use volatile SRAM buffers with differential caching (skipping unchanged keys for instantaneous updates).
-* **Full Sparse Matrix Isolation**: Covers all 126 sparse slots (`0..125`) with dual-pad addressing (indices `95/96` for `/?`, `122/123` for `Num 0`, `110/111` for `Space`, `75/76` for `Enter`, `84/85` for `LeftShift`) to prevent ghost illumination.
+<p align="center">
+  <img src="assets/icons/Yarny.png" alt="Yarny Mascot" width="128" height="128" />
+  <br />
+  <strong>FantasTech</strong>
+  <br />
+  <em>Professional Cross-Platform Driver, RGB Control Center & Microcontroller Safety Suite for the Fantech MK894 Maxpower II Mechanical RGB Keyboard</em>
+</p>
 
 ---
 
-## 📦 Workspace Crates
+## 🌟 Overview
 
-| Crate | Purpose |
-| :--- | :--- |
-| [`fantech-protocol`](fantech-rs/crates/fantech-protocol) | USB HID framing, 64-byte report serialization, opcode validation, and OpenRGB protocol serialization. |
-| [`fantech-transport`](fantech-rs/crates/fantech-transport) | Linux `/dev/hidraw` transport with auto-discovery (Interface 2) and in-memory mock backend. |
-| [`fantech-device`](fantech-rs/crates/fantech-device) | Type-state device handle (`ReadOnly`, `ReversibleAccess`, `PersistentAccess`), differential caching, and pacing. |
-| [`fantech-core`](fantech-rs/crates/fantech-core) | 104-key physical keymap definitions, matrix coordinates, themes, JSON presets, and macro compiler. |
-| [`fantech-emulator`](fantech-rs/crates/fantech-emulator) | Virtual keyboard hardware simulator with RAM state tracking for tests and CI without hardware. |
-| [`fantech-cli`](fantech-rs/crates/fantech-cli) | User-facing command-line interface (`fantech-ctl`), OpenRGB SDK server, and Linux systemd/udev setup. |
-| [`fantech-gui`](fantech-rs/crates/fantech-gui) | Lightweight desktop GUI application for interactive lighting and mapping. |
-| [`openrgb-plugin`](openrgb-plugin) | Upstream C++ OpenRGB native controller and plugin implementation files. |
+**FantasTech** is a high-performance, cross-platform driver, background daemon, OpenRGB server, and native graphical control center for the **Fantech MK894 Maxpower II** mechanical RGB keyboard (USB Vendor ID `0x36AE`, Product ID `0xFE9C`, IAP Bootloader PID `0xFEAB`).
+
+Engineered entirely in clean-room Rust, FantasTech replaces proprietary vendor blobs with a safe, responsive, unified single executable that requires zero external runtimes (no Python, no PyQt, no Electron).
 
 ---
 
-## ⚡ Linux Setup & Non-Root Permissions
+## 🚀 Key Features
 
-### 1. One-Click udev Rule Installation
-To run `fantech-ctl` and OpenRGB without needing `sudo`:
-```bash
-sudo ./fantech-rs/target/release/fantech-ctl setup-udev --install
-```
-This automatically writes `/etc/udev/rules.d/99-fantech-mk894.rules` and reloads `udevadm`.
-
-### 2. Auto-Start OpenRGB Background Service (systemd)
-To run the OpenRGB SDK server daemon automatically on login:
-```bash
-./fantech-rs/target/release/fantech-ctl setup-systemd --install
-```
-
----
-
-## 🌐 OpenRGB Integration (Two Ways)
-
-### Option A: Built-in OpenRGB SDK Server (Zero Compilation Needed)
-Start the built-in OpenRGB server daemon in `fantech-ctl`:
-```bash
-./fantech-ctl openrgb-server
-```
-Then in your OpenRGB desktop app, navigate to **SDK Client**, enter IP `127.0.0.1` and Port `6745`, and click **Connect**.
-Or using OpenRGB CLI:
-```bash
-openrgb --client 127.0.0.1:6745 -d "Fantech MK894 Maxpower II" --mode "Rainbow Wave (Horizontal)" --direction right
-```
-The MK894 appears as a full 104-key mechanical matrix device with real-time per-key RGB control, static mode, all 17 hardware animation effects, speed, brightness, and direction controls!
-
-### Option B: Upstream OpenRGB C++ Plugin
-Drop the files in [`openrgb-plugin/`](openrgb-plugin/) directly into the OpenRGB controller source tree to build the driver natively into OpenRGB. See [`openrgb-plugin/README.md`](openrgb-plugin/README.md) for instructions.
+* **Unified Single Executable**: Both GUI and CLI are delivered in a single lightweight binary (`fantastech`). Double-clicking or executing without arguments launches the native GUI; running with subcommands operates the CLI.
+* **Native GUI Control Center**: Modern, responsive user interface featuring the authentic physical 104-key ANSI layout, live per-key RGB canvas painting with dual-pad mirrored spacebar addressing, preset library, macro editor, and Yarny mascot branding.
+* **Microcontroller Protection & Hardware Safety**:
+  * **Safe IAP Bootloader State Machine**: Full USB re-enumeration management between application (`0xFE9C`) and bootloader (`0xFEAB`).
+  * **Hardware Checksum Verification**: Reads back and verifies MCU flash checksum prior to rebooting, preventing unverified or corrupt firmware execution.
+  * **Section 9 Firmware Safety Warning Modal**: Prevents accidental background flash updates; enabling automatic firmware updates requires explicit user acknowledgment of hardware risks.
+* **Full Lighting Suite**: Complete control of all 17 hardware lighting modes, speed, brightness, direction, custom palettes, and per-key RGB backlighting.
+* **Autonomous Onboard Macro Engine**: Full compiler and decompiler for the keyboard's 4KB onboard EEPROM/flash macro table (up to 32 independent macro sequences).
+* **Multi-Layer Key Remapping**: Custom key actions and layer assignment across Base and Fn layers with bounded undo/redo history.
+* **Volume Knob Runaway Guard**: Real-time event debouncer preventing volume runaway spikes on Linux (GNOME, KDE Plasma, Wayland) via exclusive evdev capture (`EVIOCGRAB`).
+* **Built-in OpenRGB TCP Server**: Exposes the keyboard over standard OpenRGB SDK protocol (port 6742) for seamless synchronization with OpenRGB ecosystems.
+* **Multi-Domain Profile Manager**: Save, load, and switch profiles independently for lighting, keymaps, macros, and device settings.
+* **Clean-Room Virtual Emulator**: Built-in in-memory virtual MCU simulation (`--emulator`) allowing full development, testing, and CI verification without requiring physical hardware.
 
 ---
 
-## 🎨 KDE Plasma 6 Desktop Integration
+## 📂 Project Architecture
 
-The Fantech MK894 includes native support for KDE Plasma 6:
-
-### 1. Automatic KDE Accent Color Sync
-Match your keyboard backlighting automatically with your active KDE Plasma wallpaper and accent color:
-```bash
-# Apply active KDE Plasma accent color once
-sudo ./fantech-rs/target/release/fantech-ctl kde-sync
-
-# Watch for color changes in the background (updates keyboard live when you change KDE theme)
-sudo ./fantech-rs/target/release/fantech-ctl kde-sync --watch
 ```
-
-### 2. Desktop Widget (Plasmoid) for KDE Panel
-Install the custom Plasma 6 desktop/panel widget:
-```bash
-./fantech-rs/target/release/fantech-ctl setup-kde --install
-```
-This installs:
-- Panel Plasmoid widget to `~/.local/share/plasma/plasmoids/org.kde.fantech.lighting/`
-- Application launcher entry to `~/.local/share/applications/fantech-ctl.desktop`
-
-To add the widget to your panel:
-1. Right-click your KDE Plasma panel or desktop.
-2. Select **Add Widgets...**
-3. Search for **Fantech MK894 Lighting** and drag it onto your panel!
-4. You get 1-click preset switching (Gaming, Cyberpunk, KDE Accent Sync, Off), animation dropdown, and a live brightness slider directly in your taskbar!
-
----
-
-## 🎮 CLI Usage (`fantech-ctl`)
-
-### 1. View Hardware Lighting Modes (All 17 Modes)
-```bash
-./fantech-rs/target/release/fantech-ctl light list-modes
-```
-Outputs a full matrix table of all 17 modes (Static, Breathing, Wave, Ripple, Rainbow, Neon, Raindrop, Reactive, etc.) along with speed, brightness, and color capabilities.
-
-### 2. Configure Lighting Animation Mode
-```bash
-# Static solid color with hex code or RGB
-sudo ./fantech-rs/target/release/fantech-ctl light set-mode static --hex '#FF0055' --brightness 4
-
-# Rainbow Wave with custom speed and direction
-sudo ./fantech-rs/target/release/fantech-ctl light set-mode wave --speed 3 --direction right
-
-# Breathing mode with custom green color
-sudo ./fantech-rs/target/release/fantech-ctl light set-mode breathing --hex '#00FF55' --speed 2
-
-# Audio reactive mode
-sudo ./fantech-rs/target/release/fantech-ctl light set-mode audio --brightness 4
-```
-
-### 3. Custom Mode: Live Interactive Key Painter
-Launch an interactive painter where keys update LIVE on your keyboard as you type:
-```bash
-sudo ./fantech-rs/target/release/fantech-ctl light custom --interactive
-```
-Interactive commands:
-- `w red` -> lights up 'W' in red
-- `wasd yellow` -> lights up WASD cluster in yellow
-- `arrows cyan` -> lights up arrow keys in cyan
-- `space #00FF55` -> lights up Spacebar in neon spring green
-- `row 0 blue` -> lights up Function row in blue
-- `save mypreset.json` -> saves the current layout to JSON
-- `exit` -> keeps your custom lighting active and exits
-
-### 4. Custom Mode: Batch Assignments & Presets
-```bash
-# Set specific keys in a single command
-sudo ./fantech-rs/target/release/fantech-ctl light custom --set 'wasd=red,arrows=blue,space=green,esc=white'
-
-# Save custom batch layout to a JSON file
-sudo ./fantech-rs/target/release/fantech-ctl light custom --set 'wasd=red,arrows=blue' --save gaming_custom.json
-
-# Load and apply preset from JSON file
-sudo ./fantech-rs/target/release/fantech-ctl light custom --load gaming_custom.json
-```
-
-### 5. Built-in Theme Presets
-```bash
-# Gaming Preset: Red WASD, Yellow Arrows, Green Space/Enter, White Esc, Royal Blue background
-sudo ./fantech-rs/target/release/fantech-ctl light preset gaming
-
-# Cyberpunk Neon: Yellow WASD, Cyan Arrows/Space, Green Esc/Enter, Hot Magenta background
-sudo ./fantech-rs/target/release/fantech-ctl light preset cyberpunk
-```
-
-### 6. Profile Management
-```bash
-# Query active hardware profile
-sudo ./fantech-rs/target/release/fantech-ctl profile --current
-
-# Switch profile (0..2)
-sudo ./fantech-rs/target/release/fantech-ctl profile 0
-```
-
-### 7. Key Matrix Verification & Single-Key Testing
-```bash
-# Isolate key 'P' with solid red (all other 103 keys cleanly blacked out)
-sudo ./fantech-rs/target/release/fantech-ctl test-keys --key p --color 255 0 0
-
-# Probe Spacebar
-sudo ./fantech-rs/target/release/fantech-ctl test-keys --key space --color 0 255 0
-
-# Turn all LEDs off
-sudo ./fantech-rs/target/release/fantech-ctl test-keys --all-off
+maxpower_ii_rea/
+├── core/                         # Rust Cargo Workspace
+│   ├── Cargo.toml
+│   └── crates/
+│       ├── fantastech-protocol/  # Wire report framing, opcodes, OpenRGB SDK framing
+│       ├── fantastech-transport/ # Cross-platform USB HID & Linux /dev/hidraw transport
+│       ├── fantastech-device/    # Hardware handles, device abstraction traits & safe flasher
+│       ├── fantastech-emulator/  # In-memory virtual keyboard MCU emulator
+│       ├── fantastech-core/      # Config, profile management & cross-platform IPC
+│       ├── fantastech-gui/       # Native graphical interface (eframe/egui)
+│       └── fantastech-cli/       # Unified application executable (CLI + GUI dispatch)
+│
+├── assets/                       # Assets & icons
+│   └── icons/                    # Yarny mascot icons, SVG glyphs, ICO
+│
+├── distribution/                 # Cross-platform packaging & installer scripts
+│   ├── flatpak/                  # Linux Flatpak manifest & udev rules (org.fantastech.FantasTech)
+│   └── windows/                  # Inno Setup installer configuration (.iss)
+│
+├── docs/                         # Technical documentation & guides
+│   ├── CLI_GUIDE.md              # Complete CLI command reference
+│   ├── VOLUME_KNOB_FIX.md        # Technical analysis of rotary encoder runaway
+│   └── mk894_layout.json         # ANSI-104 sparse matrix mapping specification
+│
+└── RE-Documentation/             # Reverse engineering research & protocol specifications
 ```
 
 ---
 
-## 🧪 Testing & Virtual Emulation
+## ⚡ Installation & Quick Start
 
-Run the entire test suite without physical hardware:
+### 1. Install to System (Linux)
+Run the automated installer script:
 ```bash
-cargo test --workspace
+./distribution/linux/install.sh
 ```
-Or test any command against the virtual simulated keyboard:
+* Installs `fantastech` and symlink `fantastech-ctl` to `~/.local/bin` (or `/usr/local/bin` if run with sudo).
+* Adds the **FantasTech** desktop launcher to your desktop application menu.
+* Installs high-resolution Yarny mascot icons.
+* Configures non-root udev rules for the MK894 normal PID (`0xFE9C`) and IAP bootloader (`0xFEAB`).
+* Registers and starts the background systemd user service.
+
+To uninstall cleanly at any time:
 ```bash
-./fantech-rs/target/release/fantech-ctl --emulator info
-./fantech-rs/target/release/fantech-ctl --emulator light set-mode wave --speed 3
-./fantech-rs/target/release/fantech-ctl --emulator light custom --set 'wasd=red'
+./distribution/linux/install.sh --uninstall
 ```
+
+### 2. Launching the GUI
+Click **FantasTech** in your application launcher, or execute from terminal:
+```bash
+fantastech
+```
+
+### 3. Running from Source without Installing
+You can also run the compiled binary directly:
+```bash
+# Launch GUI
+cargo run --release --manifest-path core/Cargo.toml --bin fantastech
+
+# Run CLI subcommands
+cargo run --release --manifest-path core/Cargo.toml --bin fantastech -- info
+```
+
+---
+
+## 🛠️ CLI Reference
+
+For complete CLI documentation, see [docs/CLI_GUIDE.md](docs/CLI_GUIDE.md).
+
+```bash
+# Query hardware info and firmware version
+fantastech info
+
+# Query info using virtual emulator (no physical keyboard needed)
+fantastech -e info
+
+# Lighting controls
+fantastech light set-mode 3 --speed 4 --brightness 4
+fantastech light preset gaming
+fantastech light off
+
+# Profile management
+fantastech profile apply lighting cyberwave
+fantastech profile list lighting
+
+# Key remapping
+fantastech remap set CapsLock LeftControl
+fantastech remap dump
+
+# Run OpenRGB SDK server
+fantastech openrgb-server --port 6742
+
+# Background service management
+fantastech service status
+fantastech service restart
+```
+
+---
+
+## 🌐 OpenRGB Synchronization
+
+1. Start the FantasTech OpenRGB server:
+   ```bash
+   fantastech openrgb-server --port 6742
+   ```
+2. Open the OpenRGB application, navigate to the **SDK Client** tab, set Host to `127.0.0.1` and Port to `6742`, then click **Connect**.
+3. The keyboard appears with full per-key matrix control.
+
+---
+
+## 📦 Platform Installers
+
+Package configurations are provided in `distribution/`:
+* **Linux Flatpak (Only)**: `distribution/flatpak/org.fantastech.FantasTech.yaml`
+* **Windows Installer**: `distribution/windows/installer.iss` (Inno Setup)
+
+---
+
+## 🧪 Automated Testing
+
+Run all unit tests, safety verification tests, and virtual MCU emulator integration tests:
+```bash
+cd core && cargo test --workspace
+```
+
+---
+
+## 📄 License
+
+Licensed under the **Apache License, Version 2.0**. See the [LICENSE](LICENSE) file for terms.
