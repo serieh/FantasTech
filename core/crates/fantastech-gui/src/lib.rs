@@ -516,6 +516,12 @@ pub fn run_gui() -> eframe::Result<()> {
     )
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileDomain {
+    Button,
+    Lighting,
+}
+
 struct FantasTechApp {
     config: FantasTechConfig,
     profile_manager: ProfileManager,
@@ -524,6 +530,16 @@ struct FantasTechApp {
     selected_macro_profile: String,
     #[allow(dead_code)]
     selected_settings_profile: String,
+
+    // Profile creation & deletion modal state
+    profile_modal_open: bool,
+    profile_modal_domain: ProfileDomain,
+    profile_modal_name: String,
+    profile_modal_copy_current: bool,
+    delete_profile_modal_open: bool,
+    delete_profile_id: String,
+    delete_profile_name: String,
+    delete_profile_domain: ProfileDomain,
 
     // Hardware & connectivity
     is_emulator: bool,
@@ -660,6 +676,15 @@ impl FantasTechApp {
             selected_button_profile,
             selected_macro_profile,
             selected_settings_profile,
+
+            profile_modal_open: false,
+            profile_modal_domain: ProfileDomain::Button,
+            profile_modal_name: String::new(),
+            profile_modal_copy_current: true,
+            delete_profile_modal_open: false,
+            delete_profile_id: String::new(),
+            delete_profile_name: String::new(),
+            delete_profile_domain: ProfileDomain::Button,
 
             is_emulator,
             connected,

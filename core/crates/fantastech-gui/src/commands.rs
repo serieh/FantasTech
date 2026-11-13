@@ -1053,17 +1053,70 @@ impl FantasTechApp {
         self.status_message = format!("Cloned profile '{}'", new_profile.name);
     }
 
-    pub(super) fn delete_active_button_profile(&mut self) {
-        let current_id = self.selected_button_profile.clone();
-        if let Some(p) = self.profile_manager.load_button_profile(&current_id) {
-            if p.is_builtin || current_id == "default" {
+    pub(super) fn create_new_button_profile(&mut self, name: &str, copy_current: bool) {
+        let clean_name = name.trim();
+        if clean_name.is_empty() {
+            self.status_message = "Profile name cannot be empty".to_string();
+            return;
+        }
+        let slug: String = clean_name
+            .to_lowercase()
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+            .collect();
+        let slug_trimmed = slug.trim_matches('_');
+        let base_slug = if slug_trimmed.is_empty() { "profile" } else { slug_trimmed };
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() % 100000;
+        let new_id = format!("{}_{}", base_slug, ts);
+
+        let (base_layer, fn_layer) = if copy_current {
+            let prof = (self.active_profile as usize).min(2);
+            (
+                LayerKeymapConfig::from_descriptors(&self.profiles[prof][0], KeyLayer::Base),
+                LayerKeymapConfig::from_descriptors(&self.profiles[prof][1], KeyLayer::Fn),
+            )
+        } else {
+            (
+                LayerKeymapConfig::from_descriptors(&default_layer_keymap(KeyLayer::Base), KeyLayer::Base),
+                LayerKeymapConfig::from_descriptors(&default_layer_keymap(KeyLayer::Fn), KeyLayer::Fn),
+            )
+        };
+
+        let new_profile = ButtonProfile {
+            id: new_id.clone(),
+            name: clean_name.to_string(),
+            description: format!("Custom button profile: {}", clean_name),
+            base_layer,
+            fn_layer,
+            is_builtin: false,
+        };
+
+        match self.profile_manager.save_button_profile(&new_profile) {
+            Ok(_) => {
+                self.apply_button_profile_by_id(&new_id);
+                self.status_message = format!("Created new button profile '{}'", clean_name);
+            }
+            Err(e) => {
+                self.status_message = format!("Failed to create profile '{}': {}", clean_name, e);
+            }
+        }
+    }
+
+    pub(super) fn delete_button_profile_by_id(&mut self, id: &str) {
+        if let Some(p) = self.profile_manager.load_button_profile(id) {
+            if p.is_builtin || id == "default" {
                 self.status_message = format!("Cannot delete built-in profile '{}'", p.name);
                 return;
             }
-            match self.profile_manager.delete_button_profile(&current_id) {
+            match self.profile_manager.delete_button_profile(id) {
                 Ok(true) => {
+                    if self.selected_button_profile == id {
+                        self.apply_button_profile_by_id("default");
+                    }
                     self.status_message = format!("Deleted button profile '{}'", p.name);
-                    self.apply_button_profile_by_id("default");
                 }
                 Ok(false) => {
                     self.status_message = format!("Profile '{}' was not found on disk", p.name);
@@ -1073,6 +1126,11 @@ impl FantasTechApp {
                 }
             }
         }
+    }
+
+    pub(super) fn delete_active_button_profile(&mut self) {
+        let current_id = self.selected_button_profile.clone();
+        self.delete_button_profile_by_id(&current_id);
     }
 
     pub(super) fn reset_active_button_profile(&mut self) {
@@ -1159,26 +1217,104 @@ impl FantasTechApp {
         self.status_message = format!("Cloned lighting profile '{}'", new_profile.name);
     }
 
-    pub(super) fn delete_active_lighting_profile(&mut self) {
-        let current_id = self.selected_lighting_profile.clone();
-        if let Some(p) = self.profile_manager.load_lighting_profile(&current_id) {
-            if p.is_builtin || current_id == "gaming" || current_id == "rainbow_wave" {
+    pub(super) fn create_new_lighting_profile(&mut self, name: &str, copy_current: bool) {
+        let clean_name = name.trim();
+        if clean_name.is_empty() {
+            self.status_message = "Profile name cannot be empty".to_string();
+            return;
+        }
+        let slug: String = clean_name
+            .to_lowercase()
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+            .collect();
+        let slug_trimmed = slug.trim_matches('_');
+        let base_slug = if slug_trimmed.is_empty() { "profile" } else { slug_trimmed };
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() % 100000;
+        let new_id = format!("{}_{}", base_slug, ts);
+
+        let (mode, speed, brightness, direction, color, color_mode, canvas) = if copy_current {
+            let mut canvas_map = std::collections::HashMap::new();
+            for (i, c) in self.key_colors.iter().enumerate() {
+                if *c != Color32::BLACK {
+                    canvas_map.insert(i, [c.r(), c.g(), c.b()]);
+                }
+            }
+            (
+                LightingMode::from_u8(self.selected_mode).unwrap_or(LightingMode::Spectrum),
+                self.speed,
+                self.brightness,
+                self.direction,
+                self.current_color,
+                Some(if self.is_fixed_color || self.selected_mode == 1 { ColorMode::FixedColor } else { ColorMode::DynamicSpectrum }),
+                canvas_map,
+            )
+        } else {
+            (
+                LightingMode::Spectrum,
+                3,
+                4,
+                0,
+                [255, 0, 0],
+                Some(ColorMode::DynamicSpectrum),
+                std::collections::HashMap::new(),
+            )
+        };
+
+        let new_profile = LightingProfile {
+            id: new_id.clone(),
+            name: clean_name.to_string(),
+            description: format!("Custom lighting profile: {}", clean_name),
+            mode,
+            speed,
+            brightness,
+            direction,
+            color,
+            color_mode,
+            canvas,
+            is_builtin: false,
+        };
+
+        match self.profile_manager.save_lighting_profile(&new_profile) {
+            Ok(_) => {
+                self.apply_lighting_profile_by_id(&new_id);
+                self.status_message = format!("Created new lighting profile '{}'", clean_name);
+            }
+            Err(e) => {
+                self.status_message = format!("Failed to create lighting profile '{}': {}", clean_name, e);
+            }
+        }
+    }
+
+    pub(super) fn delete_lighting_profile_by_id(&mut self, id: &str) {
+        if let Some(p) = self.profile_manager.load_lighting_profile(id) {
+            if p.is_builtin || id == "gaming" || id == "rainbow_wave" {
                 self.status_message = format!("Cannot delete built-in profile '{}'", p.name);
                 return;
             }
-            match self.profile_manager.delete_lighting_profile(&current_id) {
+            match self.profile_manager.delete_lighting_profile(id) {
                 Ok(true) => {
+                    if self.selected_lighting_profile == id {
+                        self.apply_lighting_profile_by_id("gaming");
+                    }
                     self.status_message = format!("Deleted lighting profile '{}'", p.name);
-                    self.apply_lighting_profile_by_id("gaming");
                 }
                 Ok(false) => {
                     self.status_message = format!("Profile '{}' was not found on disk", p.name);
                 }
                 Err(e) => {
-                    self.status_message = format!("Error deleting lighting profile '{}': {}", p.name, e);
+                    self.status_message = format!("Error deleting profile '{}': {}", p.name, e);
                 }
             }
         }
+    }
+
+    pub(super) fn delete_active_lighting_profile(&mut self) {
+        let current_id = self.selected_lighting_profile.clone();
+        self.delete_lighting_profile_by_id(&current_id);
     }
 
     pub(super) fn reset_active_lighting_profile(&mut self) {
