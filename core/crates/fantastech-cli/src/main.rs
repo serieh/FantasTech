@@ -965,7 +965,15 @@ fn run_command<T: Transport>(transport: T, cli: &Cli) -> Result<(), Box<dyn std:
                     println!("  Lighting Mode:     {:?} (Index {})", config.mode, config.mode as u8);
                     println!("  Brightness Level:  {} / 4", config.brightness);
                     println!("  Speed Level:       {} / 4", config.speed);
-                    println!("  Direction:         {:?}", config.direction);
+                    let dir_str = match (config.mode, config.direction) {
+                        (LightingMode::StreamLeftToRight, AnimationDirection::Default) => "Left (◀ Right to Left)",
+                        (LightingMode::StreamLeftToRight, AnimationDirection::LeftToRight) => "Right (Left to Right ▶)",
+                        (LightingMode::StreamUpToDown, AnimationDirection::Default) => "Up (▲ Bottom to Top)",
+                        (LightingMode::StreamUpToDown, AnimationDirection::LeftToRight) => "Down (Top to Bottom ▼)",
+                        (_, AnimationDirection::Default) => "Default (0)",
+                        (_, AnimationDirection::LeftToRight) => "Reverse (1)",
+                    };
+                    println!("  Direction:         {}", dir_str);
                     println!("  Color Mode:        {:?}", config.color_mode);
                     println!("  Current Color:     RGB({}, {}, {})", config.color.r, config.color.g, config.color.b);
                     println!("==========================================");

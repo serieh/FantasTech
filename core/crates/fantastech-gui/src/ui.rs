@@ -2051,8 +2051,8 @@ impl FantasTechApp {
                                 Color32::from_rgb(r, g, b)
                             }
                             5 => {
-                                // Horizontal wave (direction 0 = Left->Right, direction 1 = Right->Left)
-                                let dir_sign = if self.direction == 1 { 1.0 } else { -1.0 };
+                                // Horizontal wave (direction 0 = Flow Left, direction 1 = Flow Right)
+                                let dir_sign = if self.direction == 1 { -1.0 } else { 1.0 };
                                 let phase = (vkey.x / 23.0 + time * spd_factor * 0.25 * dir_sign) % 1.0;
                                 let norm_phase = if phase < 0.0 { phase + 1.0 } else { phase };
                                 if self.is_fixed_color {
@@ -2068,8 +2068,8 @@ impl FantasTechApp {
                                 }
                             }
                             7 => {
-                                // Vertical wave (direction 0 = Up->Down, direction 1 = Down->Up)
-                                let dir_sign = if self.direction == 1 { 1.0 } else { -1.0 };
+                                // Vertical wave (direction 0 = Flow Up, direction 1 = Flow Down)
+                                let dir_sign = if self.direction == 1 { -1.0 } else { 1.0 };
                                 let phase = (vkey.y / 5.5 + time * spd_factor * 0.35 * dir_sign) % 1.0;
                                 let norm_phase = if phase < 0.0 { phase + 1.0 } else { phase };
                                 if self.is_fixed_color {
@@ -2463,9 +2463,9 @@ impl FantasTechApp {
                     ui.label(RichText::new("Wave Direction:").strong());
                     ui.add_space(2.0);
                     let (opt0, opt1) = if mode_enum == LightingMode::StreamLeftToRight {
-                        ("◀ Left to Right", "Right to Left ▶")
+                        ("◀ Flow Left", "Flow Right ▶")
                     } else {
-                        ("▲ Up to Down", "Down to Up ▼")
+                        ("▲ Flow Up", "Flow Down ▼")
                     };
                     let mut dir_changed = false;
                     let dir_btn_w = ((ui.available_width() - 8.0) / 2.0).max(60.0);

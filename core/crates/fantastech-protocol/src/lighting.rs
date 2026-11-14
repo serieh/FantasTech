@@ -197,9 +197,9 @@ impl std::str::FromStr for AnimationDirection {
     type Err = ProtocolError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.trim().to_lowercase().as_str() {
-            "0" | "default" | "normal" | "left" | "up" => Ok(Self::Default),
-            "1" | "reverse" | "right" | "down" | "lefttoright" | "lr" | "ud" => Ok(Self::LeftToRight),
+        match s.trim().to_lowercase().replace(['-', '_', ' '], "").as_str() {
+            "0" | "default" | "normal" | "left" | "up" | "flowleft" | "flowup" | "righttoleft" | "rtl" | "bottomtotop" => Ok(Self::Default),
+            "1" | "reverse" | "right" | "down" | "flowright" | "flowdown" | "lefttoright" | "ltr" | "toptobottom" | "ud" => Ok(Self::LeftToRight),
             _ => Ok(Self::Default),
         }
     }

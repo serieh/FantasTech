@@ -669,6 +669,24 @@ impl FantasTechApp {
         let selected_macro_profile = config.active_macro_profile.clone();
         let selected_settings_profile = config.active_settings_profile.clone();
 
+        let (init_mode, init_b, init_s, init_dir, init_color, init_fixed, init_key_colors) = if let Some(p) = profile_manager.load_lighting_profile(&selected_lighting_profile) {
+            let b = if p.brightness <= 4 { p.brightness } else { ((p.brightness as f32 / 100.0) * 4.0).round().clamp(0.0, 4.0) as u8 };
+            let s = if p.speed <= 4 { p.speed } else { ((p.speed as f32 / 100.0) * 4.0).round().clamp(0.0, 4.0) as u8 };
+            let fixed = p.color_mode.map(|cm| cm == ColorMode::FixedColor).unwrap_or(p.mode == LightingMode::Static);
+            let mut colors = [Color32::from_rgb(p.color[0], p.color[1], p.color[2]); SPARSE_KEY_COUNT];
+            if p.mode == LightingMode::CustomMatrixCanvas {
+                let matrix = p.to_matrix();
+                for (idx, rgb) in matrix.iter().enumerate() {
+                    if idx < SPARSE_KEY_COUNT {
+                        colors[idx] = Color32::from_rgb(rgb.r, rgb.g, rgb.b);
+                    }
+                }
+            }
+            (p.mode as u8, if b == 0 && p.mode != LightingMode::Off { 4 } else { b }, s, p.direction, p.color, fixed, colors)
+        } else {
+            (4, 4, 2, 0, [0, 113, 207], false, [Color32::from_rgb(0, 113, 207); SPARSE_KEY_COUNT])
+        };
+
         Self {
             config,
             profile_manager,
@@ -721,12 +739,12 @@ impl FantasTechApp {
             macro_modal_loop_mode: 0,
             macro_modal_repeat: 1,
 
-            selected_mode: 4, // Spectrum by default
-            brightness: 4,
-            speed: 2,
-            direction: 0,
-            is_fixed_color: false,
-            current_color: [0, 113, 207],
+            selected_mode: init_mode,
+            brightness: init_b,
+            speed: init_s,
+            direction: init_dir,
+            is_fixed_color: init_fixed,
+            current_color: init_color,
             copied_color: None,
             recent_colors: vec![
                 [229, 62, 62],  // Red
@@ -739,7 +757,7 @@ impl FantasTechApp {
             text_logo_texture: None,
             undo_texture: None,
             redo_texture: None,
-            key_colors: [Color32::from_rgb(0, 113, 207); SPARSE_KEY_COUNT],
+            key_colors: init_key_colors,
             custom_selected_keys: std::collections::BTreeSet::new(),
             custom_select_all: false,
             install_status_message: None,
