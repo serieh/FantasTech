@@ -961,24 +961,35 @@ impl FantasTechApp {
                     }
                 }
                 let colors: Vec<[u8; 3]> = matrix.iter().map(|c| [c.r, c.g, c.b]).collect();
-                let _ = send_ipc_request(&IpcRequest::SetCanvasMatrix { colors });
-            }
-            match send_ipc_request(&IpcRequest::SetLightingMode {
-                mode,
-                brightness: self.brightness,
-                speed: self.speed,
-                direction: self.direction,
-                color_mode,
-                color: self.current_color,
-            }) {
-                Ok(IpcResponse::Ok) => {
-                    self.status_message = format!("Service (IPC): Applied lighting mode {:?}", mode);
+                match send_ipc_request(&IpcRequest::SetCanvasMatrix { colors }) {
+                    Ok(IpcResponse::Ok) => {
+                        self.status_message = "Service (IPC): Applied custom matrix canvas".to_string();
+                    }
+                    Ok(resp) => {
+                        self.status_message = format!("Service response: {:?}", resp);
+                    }
+                    Err(e) => {
+                        self.status_message = format!("IPC error setting canvas: {}", e);
+                    }
                 }
-                Ok(resp) => {
-                    self.status_message = format!("Service response: {:?}", resp);
-                }
-                Err(e) => {
-                    self.status_message = format!("IPC error setting lighting: {}", e);
+            } else {
+                match send_ipc_request(&IpcRequest::SetLightingMode {
+                    mode,
+                    brightness: self.brightness,
+                    speed: self.speed,
+                    direction: self.direction,
+                    color_mode,
+                    color: self.current_color,
+                }) {
+                    Ok(IpcResponse::Ok) => {
+                        self.status_message = format!("Service (IPC): Applied lighting mode {:?}", mode);
+                    }
+                    Ok(resp) => {
+                        self.status_message = format!("Service response: {:?}", resp);
+                    }
+                    Err(e) => {
+                        self.status_message = format!("IPC error setting lighting: {}", e);
+                    }
                 }
             }
         } else if let Some(ref path) = self.permission_denied_node {
@@ -988,25 +999,33 @@ impl FantasTechApp {
         } else if let Ok(t) = HidrawTransport::discover() {
             let mut dev = Device::new_read_only(t).into_reversible();
             dev.set_dry_run(self.dry_run_enabled);
-            match dev.set_lighting(&config) {
-                Ok(_) => {
-                    if mode == LightingMode::CustomMatrixCanvas {
-                        let mut matrix = [RgbColor::new(0, 0, 0); SPARSE_KEY_COUNT];
-                        let factor = (self.brightness as f32 / 4.0).clamp(0.0, 1.0);
-                        for (idx, color) in self.key_colors.iter().enumerate() {
-                            if idx < SPARSE_KEY_COUNT {
-                                let r = (color.r() as f32 * factor).round() as u8;
-                                let g = (color.g() as f32 * factor).round() as u8;
-                                let b = (color.b() as f32 * factor).round() as u8;
-                                matrix[idx] = RgbColor::new(r, g, b);
-                            }
-                        }
-                        let _ = dev.apply_matrix_keys(&matrix);
+            if mode == LightingMode::CustomMatrixCanvas {
+                let mut matrix = [RgbColor::new(0, 0, 0); SPARSE_KEY_COUNT];
+                let factor = (self.brightness as f32 / 4.0).clamp(0.0, 1.0);
+                for (idx, color) in self.key_colors.iter().enumerate() {
+                    if idx < SPARSE_KEY_COUNT {
+                        let r = (color.r() as f32 * factor).round() as u8;
+                        let g = (color.g() as f32 * factor).round() as u8;
+                        let b = (color.b() as f32 * factor).round() as u8;
+                        matrix[idx] = RgbColor::new(r, g, b);
                     }
-                    self.status_message = format!("Hardware updated: mode {:?}, brightness {}, speed {}", config.mode, self.brightness, self.speed);
                 }
-                Err(e) => {
-                    self.status_message = format!("❌ Hardware error setting lighting: {}", e);
+                match dev.stream_matrix_canvas(&matrix) {
+                    Ok(_) => {
+                        self.status_message = "Hardware updated: Custom Matrix Canvas applied".to_string();
+                    }
+                    Err(e) => {
+                        self.status_message = format!("❌ Hardware error setting canvas: {}", e);
+                    }
+                }
+            } else {
+                match dev.set_lighting(&config) {
+                    Ok(_) => {
+                        self.status_message = format!("Hardware updated: mode {:?}, brightness {}, speed {}", config.mode, self.brightness, self.speed);
+                    }
+                    Err(e) => {
+                        self.status_message = format!("❌ Hardware error setting lighting: {}", e);
+                    }
                 }
             }
         } else {

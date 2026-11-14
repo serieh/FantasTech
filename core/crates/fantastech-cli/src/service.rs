@@ -692,6 +692,16 @@ pub(crate) fn dispatch_ipc_request(
                 *om = matrix;
             }
             let mut dev = dev_control.lock().unwrap();
+            let canvas_cfg = LightingConfig {
+                zone: LightingZone::MainBacklight,
+                mode: LightingMode::CustomMatrixCanvas,
+                brightness: 4,
+                speed: 0,
+                direction: AnimationDirection::Default,
+                color_mode: ColorMode::FixedColor,
+                color: RgbColor::new(0, 0, 0),
+            };
+            let _ = dev.apply_lighting_config(&canvas_cfg);
             match dev.apply_matrix_canvas(&matrix) {
                 Ok(()) => IpcResponse::Ok,
                 Err(e) => IpcResponse::Error(e),

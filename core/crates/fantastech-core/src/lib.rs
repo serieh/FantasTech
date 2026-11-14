@@ -266,6 +266,10 @@ pub fn keys_for_zone(zone: &str) -> Option<Vec<&'static KeyEntry>> {
 /// Resolves alternate electrical pad index for edge switches with dual solder positions.
 pub fn get_mirror_key_index(key_index: u8) -> Option<u8> {
     match key_index {
+        84 => Some(85),
+        85 => Some(84),
+        96 => Some(97),
+        97 => Some(96),
         110 => Some(111),
         111 => Some(110),
         122 => Some(123),
@@ -1656,6 +1660,12 @@ mod tests {
         let num0 = KEY_DEFINITIONS.iter().find(|k| k.name == "Num 0").unwrap();
         assert_eq!(num0.index, 123);
         assert_eq!(get_mirror_key_index(123), Some(122));
+
+        // Shift stabilizer pads
+        assert_eq!(get_mirror_key_index(84), Some(85));
+        assert_eq!(get_mirror_key_index(85), Some(84));
+        assert_eq!(get_mirror_key_index(97), Some(96));
+        assert_eq!(get_mirror_key_index(96), Some(97));
 
         // Default base layer keymap validation
         let base = default_layer_keymap(KeyLayer::Base);
