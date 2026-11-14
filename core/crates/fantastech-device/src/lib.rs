@@ -473,21 +473,23 @@ impl<T: Transport> Device<T, ReversibleAccess> {
             std::thread::sleep(std::time::Duration::from_millis(30));
         }
 
-        // Transmit differential Opcode 0x14 reports paced at 3ms
+        // Transmit Opcode 0x14 reports paced at 10ms
         for &(key_idx, color) in &diff {
             let report = build_single_key_color(key_idx, color)?;
             self.transport.write_report(report.as_bytes())?;
             if (key_idx as usize) < SPARSE_KEY_COUNT {
                 self.color_cache[key_idx as usize] = Some(color);
             }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+
             if let Some(mirror) = get_mirror_key_index(key_idx) {
                 let m_report = build_single_key_color(mirror, color)?;
                 self.transport.write_report(m_report.as_bytes())?;
                 if (mirror as usize) < SPARSE_KEY_COUNT {
                     self.color_cache[mirror as usize] = Some(color);
                 }
+                std::thread::sleep(std::time::Duration::from_millis(10));
             }
-            std::thread::sleep(std::time::Duration::from_millis(3));
         }
 
         Ok(None)
@@ -517,7 +519,7 @@ impl<T: Transport> Device<T, ReversibleAccess> {
             };
             self.set_lighting(&config)?;
             self.color_cache.fill(None);
-            std::thread::sleep(std::time::Duration::from_millis(15));
+            std::thread::sleep(std::time::Duration::from_millis(30));
         }
 
         // Synchronize dual-pad stabilizer mirrors in memory
@@ -531,25 +533,14 @@ impl<T: Transport> Device<T, ReversibleAccess> {
             }
         }
 
-        // Calculate dirty keys against color cache
-        let mut dirty_keys = Vec::new();
+        // Apply color to each physical key individually, matching manual user single-key selection (10ms pacing)
         for key_def in KEY_DEFINITIONS.iter() {
-            let idx = key_def.index as usize;
-            if self.color_cache[idx] != Some(synchronized_matrix[idx]) {
-                dirty_keys.push((key_def.index, synchronized_matrix[idx]));
-            }
-        }
-
-        // If no keys changed and we're already in canvas mode, no USB traffic is needed
-        if dirty_keys.is_empty() {
-            return Ok(None);
-        }
-
-        // Low-latency, zero-loss single-key streaming via Opcode 0x14 (3ms pacing)
-        for (idx, color) in dirty_keys {
+            let idx = key_def.index;
+            let color = synchronized_matrix[idx as usize];
             let report = build_single_key_color(idx, color)?;
             self.transport.write_report(report.as_bytes())?;
             self.color_cache[idx as usize] = Some(color);
+            std::thread::sleep(std::time::Duration::from_millis(10));
 
             if let Some(mirror) = get_mirror_key_index(idx) {
                 let m_report = build_single_key_color(mirror, color)?;
@@ -557,8 +548,8 @@ impl<T: Transport> Device<T, ReversibleAccess> {
                 if (mirror as usize) < SPARSE_KEY_COUNT {
                     self.color_cache[mirror as usize] = Some(color);
                 }
+                std::thread::sleep(std::time::Duration::from_millis(10));
             }
-            std::thread::sleep(std::time::Duration::from_millis(3));
         }
 
         Ok(None)
@@ -983,12 +974,12 @@ mod tests {
 
     #[test]
     fn test_apply_matrix_keys_differential_and_bulk() {
-        // 1. Bulk update: all keys changed (> 15 keys)
+        // 1. Initial matrix application (mode switch + all 104 keys + 5 mirrors)
         let mock = MockTransport::new();
         let dev = Device::new_read_only(mock);
         let mut rev_dev = dev.into_reversible();
         let matrix = [RgbColor::new(100, 150, 200); SPARSE_KEY_COUNT];
-        rev_dev.apply_matrix_keys(&matrix).expect("apply bulk matrix");
+        rev_dev.apply_matrix_keys(&matrix).expect("apply matrix");
 
         let reports = rev_dev.into_read_only().into_transport().outgoing;
         // Mode switch (0x0B) + 104 physical keys + 5 dual-pad mirror keys (0x14) = 110 reports
@@ -998,30 +989,33 @@ mod tests {
             assert_eq!(r[1], opcodes::SET_SINGLE_KEY_LED);
         }
 
-        // 2. Zero-diff update: exact same matrix produces 0 reports
+        // 2. Full application in canvas mode applies all keys individually without mode reset (109 reports)
         let mock2 = MockTransport::new();
         let dev2 = Device::new_read_only(mock2);
         let mut rev_dev2 = dev2.into_reversible();
         rev_dev2.current_mode = Some(LightingMode::CustomMatrixCanvas);
-        rev_dev2.set_all_color_cache(RgbColor::new(100, 150, 200));
-        rev_dev2.apply_matrix_keys(&matrix).expect("apply identical matrix");
+        rev_dev2.apply_matrix_keys(&matrix).expect("apply matrix");
         let reports2 = rev_dev2.into_read_only().into_transport().outgoing;
-        assert_eq!(reports2.len(), 0);
+        assert_eq!(reports2.len(), 109);
+        for r in &reports2 {
+            assert_eq!(r[1], opcodes::SET_SINGLE_KEY_LED);
+        }
 
-        // 3. Small diff update: 2 keys changed (<= 15 keys)
+        // 3. Small diff update via set_multiple_keys_color sends only changed keys (2 keys)
         let mock3 = MockTransport::new();
         let dev3 = Device::new_read_only(mock3);
         let mut rev_dev3 = dev3.into_reversible();
         rev_dev3.current_mode = Some(LightingMode::CustomMatrixCanvas);
         rev_dev3.set_all_color_cache(RgbColor::new(100, 150, 200));
 
-        let mut diff_matrix = matrix;
-        diff_matrix[44] = RgbColor::new(255, 0, 0); // 'W' (no mirror)
-        diff_matrix[45] = RgbColor::new(0, 255, 0); // 'E' (no mirror)
-        rev_dev3.apply_matrix_keys(&diff_matrix).expect("apply small diff");
+        let diff = vec![
+            (44, RgbColor::new(255, 0, 0)), // 'W' (no mirror)
+            (45, RgbColor::new(0, 255, 0)), // 'E' (no mirror)
+        ];
+        rev_dev3.set_multiple_keys_color(&diff).expect("apply small diff");
 
         let reports3 = rev_dev3.into_read_only().into_transport().outgoing;
-        // Exactly 2 Opcode 0x14 packets, no 0x0B mode switch, no 0x12 bulk stream
+        // Exactly 2 Opcode 0x14 packets, no 0x0B mode switch
         assert_eq!(reports3.len(), 2);
         assert_eq!(reports3[0][1], opcodes::SET_SINGLE_KEY_LED);
         assert_eq!(reports3[1][1], opcodes::SET_SINGLE_KEY_LED);

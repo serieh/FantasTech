@@ -608,11 +608,17 @@ impl FantasTechApp {
             return;
         }
 
+        let raw_color = if (key_index as usize) < self.key_colors.len() {
+            let col = self.key_colors[key_index as usize];
+            [col.r(), col.g(), col.b()]
+        } else {
+            self.current_color
+        };
         let factor = (self.brightness as f32 / 4.0).clamp(0.0, 1.0);
         let color = [
-            (self.current_color[0] as f32 * factor).round() as u8,
-            (self.current_color[1] as f32 * factor).round() as u8,
-            (self.current_color[2] as f32 * factor).round() as u8,
+            (raw_color[0] as f32 * factor).round() as u8,
+            (raw_color[1] as f32 * factor).round() as u8,
+            (raw_color[2] as f32 * factor).round() as u8,
         ];
         let mirror = get_mirror_key_index(key_index);
 
@@ -759,15 +765,13 @@ impl FantasTechApp {
         }
         self.persist_current_lighting_profile();
 
-        if keys_to_paint.len() == 1 {
-            self.set_single_key_color(keys_to_paint[0]);
-        } else if keys_to_paint.len() <= 10 {
+        if self.custom_select_all {
+            self.apply_lighting();
+            self.status_message = format!("Painted all keys with #{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]);
+        } else {
             for &k in &keys_to_paint {
                 self.set_single_key_color(k);
             }
-            self.status_message = format!("Painted {} keys with #{:02X}{:02X}{:02X}", keys_to_paint.len(), rgb[0], rgb[1], rgb[2]);
-        } else {
-            self.apply_lighting();
             self.status_message = format!("Painted {} keys with #{:02X}{:02X}{:02X}", keys_to_paint.len(), rgb[0], rgb[1], rgb[2]);
         }
     }
