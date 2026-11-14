@@ -139,9 +139,15 @@ impl LightingMode {
     }
 
     /// Whether this mode supports direction controls.
-    /// Mode 5 (StreamLeftToRight) and Mode 7 (StreamUpToDown) support direction flipping in hardware.
+    ///
+    /// Note on Fantech MK894 / AK107 (AT32F405 MCU):
+    /// While byte 10 of Report 0x0B accepts direction values in RAM, the MCU's internal
+    /// firmware animation engine hardcodes wave render flow (Mode 5 flows Left-to-Right,
+    /// Mode 7 flows Top-to-Bottom) and ignores Byte 10 during active rendering.
+    /// The vendor software explicitly hides direction controls with `hidden: !0`.
+    /// Consequently, this returns `false` across all modes to match physical hardware capability.
     pub fn supports_direction(&self) -> bool {
-        matches!(self, Self::StreamLeftToRight | Self::StreamUpToDown)
+        false
     }
 }
 

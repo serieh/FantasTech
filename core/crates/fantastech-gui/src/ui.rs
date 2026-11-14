@@ -2051,9 +2051,8 @@ impl FantasTechApp {
                                 Color32::from_rgb(r, g, b)
                             }
                             5 => {
-                                // Horizontal wave (direction 0 = Flow Left, direction 1 = Flow Right)
-                                let dir_sign = if self.direction == 1 { -1.0 } else { 1.0 };
-                                let phase = (vkey.x / 23.0 + time * spd_factor * 0.25 * dir_sign) % 1.0;
+                                // Horizontal wave (fixed Left-to-Right matching MK894 hardware flow)
+                                let phase = (vkey.x / 23.0 - time * spd_factor * 0.25) % 1.0;
                                 let norm_phase = if phase < 0.0 { phase + 1.0 } else { phase };
                                 if self.is_fixed_color {
                                     let wave = (norm_phase * std::f32::consts::TAU).sin() * 0.45 + 0.55;
@@ -2068,9 +2067,8 @@ impl FantasTechApp {
                                 }
                             }
                             7 => {
-                                // Vertical wave (direction 0 = Flow Up, direction 1 = Flow Down)
-                                let dir_sign = if self.direction == 1 { -1.0 } else { 1.0 };
-                                let phase = (vkey.y / 5.5 + time * spd_factor * 0.35 * dir_sign) % 1.0;
+                                // Vertical wave (fixed Top-to-Bottom matching MK894 hardware flow)
+                                let phase = (vkey.y / 5.5 - time * spd_factor * 0.35) % 1.0;
                                 let norm_phase = if phase < 0.0 { phase + 1.0 } else { phase };
                                 if self.is_fixed_color {
                                     let wave = (norm_phase * std::f32::consts::TAU).sin() * 0.45 + 0.55;
@@ -2457,40 +2455,6 @@ impl FantasTechApp {
                 if ui.add(Slider::new(&mut self.speed, 0..=4).show_value(false).trailing_fill(true)).changed() {
                     self.apply_lighting();
                 }
-
-                if mode_enum.supports_direction() {
-                    ui.add_space(8.0);
-                    ui.label(RichText::new("Wave Direction:").strong());
-                    ui.add_space(2.0);
-                    let (opt0, opt1) = if mode_enum == LightingMode::StreamLeftToRight {
-                        ("◀ Flow Left", "Flow Right ▶")
-                    } else {
-                        ("▲ Flow Up", "Flow Down ▼")
-                    };
-                    let mut dir_changed = false;
-                    let dir_btn_w = ((ui.available_width() - 8.0) / 2.0).max(60.0);
-                    ui.horizontal(|ui| {
-                        let btn0 = egui::Button::new(if self.direction == 0 { RichText::new(opt0).strong().color(Color32::WHITE) } else { RichText::new(opt0) })
-                            .fill(if self.direction == 0 { Color32::from_rgb(0, 113, 207) } else { if is_dark { Color32::from_rgb(30, 41, 59) } else { Color32::from_rgb(226, 232, 240) } })
-                            .min_size(Vec2::new(dir_btn_w, 24.0));
-                        if ui.add(btn0).clicked() {
-                            self.direction = 0;
-                            dir_changed = true;
-                        }
-                        let btn1 = egui::Button::new(if self.direction == 1 { RichText::new(opt1).strong().color(Color32::WHITE) } else { RichText::new(opt1) })
-                            .fill(if self.direction == 1 { Color32::from_rgb(0, 113, 207) } else { if is_dark { Color32::from_rgb(30, 41, 59) } else { Color32::from_rgb(226, 232, 240) } })
-                            .min_size(Vec2::new(dir_btn_w, 24.0));
-                        if ui.add(btn1).clicked() {
-                            self.direction = 1;
-                            dir_changed = true;
-                        }
-                    });
-                    if dir_changed {
-                        self.apply_lighting();
-                    }
-                }
-
-
             });
         });
     }
@@ -4413,10 +4377,9 @@ mod tests {
         assert_eq!(app.current_color, [0, 255, 65]);
         assert_eq!(app.key_colors[0], Color32::from_rgb(0, 59, 0));
 
-        // 5. Direction support check for Mode 5 and Mode 7
-        app.selected_mode = 5;
-        app.direction = 1; // Reverse
-        assert_eq!(app.direction, 1);
+        // 5. Hardware parity check: MK894 does not support direction reversal in built-in modes
+        assert!(!LightingMode::StreamLeftToRight.supports_direction());
+        assert!(!LightingMode::StreamUpToDown.supports_direction());
     }
 
     #[test]

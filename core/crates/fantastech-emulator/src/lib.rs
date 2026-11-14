@@ -314,6 +314,13 @@ mod tests {
         assert_eq!(emu.state().lighting_mode, LightingMode::StreamLeftToRight);
         assert_eq!(emu.state().brightness, 4);
         assert_eq!(emu.state().speed, 3);
+        // Since MK894 hardware does not support direction reversal, build_lighting_report emits 0
+        assert_eq!(emu.state().direction, 0);
+
+        // Verify emulator parses raw report byte 10 when present in packet
+        let mut raw_report = report;
+        raw_report.set_byte(10, 1).unwrap();
+        emu.write_report(raw_report.as_bytes()).unwrap();
         assert_eq!(emu.state().direction, 1);
     }
 

@@ -372,16 +372,13 @@ mod tests {
         let data_ud = build_openrgb_controller_data(keys, colors, 7, 100, 0);
         assert!(data_ud.len() > 200);
 
-        // Ensure lighting animation modes advertise direction controls for modes 5 and 7
-        assert!(LightingMode::StreamLeftToRight.supports_direction());
-        assert!(LightingMode::StreamUpToDown.supports_direction());
+        // Hardware on MK894 (AT32F405 MCU) does not support direction reversal in built-in modes.
+        // Vendor app hides direction with hidden: !0, and supports_direction() returns false for all modes.
+        assert!(!LightingMode::StreamLeftToRight.supports_direction());
+        assert!(!LightingMode::StreamUpToDown.supports_direction());
         for mode_val in 0..=16 {
             if let Ok(mode) = LightingMode::from_u8(mode_val) {
-                if mode == LightingMode::StreamLeftToRight || mode == LightingMode::StreamUpToDown {
-                    assert!(mode.supports_direction());
-                } else {
-                    assert!(!mode.supports_direction());
-                }
+                assert!(!mode.supports_direction());
             }
         }
     }
@@ -423,8 +420,8 @@ mod tests {
 
     #[test]
     fn test_direction_support_and_effect_default_query() {
-        assert!(LightingMode::StreamLeftToRight.supports_direction());
-        assert!(LightingMode::StreamUpToDown.supports_direction());
+        assert!(!LightingMode::StreamLeftToRight.supports_direction());
+        assert!(!LightingMode::StreamUpToDown.supports_direction());
         assert!(!LightingMode::Static.supports_direction());
         assert!(!LightingMode::Spectrum.supports_direction());
 
@@ -501,7 +498,7 @@ mod tests {
         assert_eq!(raw[14], 0, "Spin S must be sanitized to 0");
         assert_eq!(raw[15], 0, "Spin V must be sanitized to 0");
 
-        // Direction support check: Mode 5 must keep direction=1
+        // Direction check: MK894 hardware has fixed animation flow, so direction byte is sanitized to 0
         let wave_cfg = LightingConfig {
             zone: LightingZone::MainBacklight,
             mode: LightingMode::StreamLeftToRight,
@@ -512,7 +509,7 @@ mod tests {
             color: RgbColor::new(0, 255, 0),
         };
         let rep_wave = build_lighting_report(&wave_cfg).expect("build wave report");
-        assert_eq!(rep_wave.as_bytes()[10], 1, "Mode 5 must preserve direction 1");
+        assert_eq!(rep_wave.as_bytes()[10], 0, "Mode 5 direction must be 0 matching hardware fixed wave flow");
     }
 }
 
