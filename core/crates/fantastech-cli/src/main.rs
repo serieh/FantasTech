@@ -418,7 +418,7 @@ enum LightCommands {
         speed: u8,
 
         /// Animation direction (default, left, right, inward, outward)
-        #[arg(short, long, default_value = "default")]
+        #[arg(long, default_value = "default")]
         direction: String,
 
         /// Fixed RGB color: R G B (0..255)

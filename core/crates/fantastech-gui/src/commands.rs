@@ -1084,8 +1084,19 @@ impl FantasTechApp {
         if let Some(p) = self.profile_manager.load_lighting_profile(id) {
             self.selected_lighting_profile = p.id.clone();
             self.selected_mode = p.mode as u8;
-            self.brightness = p.brightness;
-            self.speed = p.speed;
+            self.brightness = if p.brightness <= 4 {
+                p.brightness
+            } else {
+                ((p.brightness as f32 / 100.0) * 4.0).round().clamp(0.0, 4.0) as u8
+            };
+            if self.brightness == 0 && p.mode != LightingMode::Off {
+                self.brightness = 4;
+            }
+            self.speed = if p.speed <= 4 {
+                p.speed
+            } else {
+                ((p.speed as f32 / 100.0) * 4.0).round().clamp(0.0, 4.0) as u8
+            };
             self.direction = p.direction;
             self.current_color = p.color;
             if let Some(cm) = p.color_mode {

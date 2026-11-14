@@ -473,22 +473,25 @@ impl<T: Transport> Device<T, ReversibleAccess> {
             std::thread::sleep(std::time::Duration::from_millis(30));
         }
 
-        // Transmit Opcode 0x14 reports paced at 10ms
+        // Transmit Opcode 0x14 reports paced at 15ms
+        let mut written = [false; SPARSE_KEY_COUNT];
         for &(key_idx, color) in &diff {
-            let report = build_single_key_color(key_idx, color)?;
-            self.transport.write_report(report.as_bytes())?;
-            if (key_idx as usize) < SPARSE_KEY_COUNT {
+            if (key_idx as usize) < SPARSE_KEY_COUNT && !written[key_idx as usize] {
+                let report = build_single_key_color(key_idx, color)?;
+                self.transport.write_report(report.as_bytes())?;
                 self.color_cache[key_idx as usize] = Some(color);
-            }
-            std::thread::sleep(std::time::Duration::from_millis(10));
+                written[key_idx as usize] = true;
+                std::thread::sleep(std::time::Duration::from_millis(15));
 
-            if let Some(mirror) = get_mirror_key_index(key_idx) {
-                let m_report = build_single_key_color(mirror, color)?;
-                self.transport.write_report(m_report.as_bytes())?;
-                if (mirror as usize) < SPARSE_KEY_COUNT {
-                    self.color_cache[mirror as usize] = Some(color);
+                if let Some(mirror) = get_mirror_key_index(key_idx) {
+                    if (mirror as usize) < SPARSE_KEY_COUNT && !written[mirror as usize] {
+                        let m_report = build_single_key_color(mirror, color)?;
+                        self.transport.write_report(m_report.as_bytes())?;
+                        self.color_cache[mirror as usize] = Some(color);
+                        written[mirror as usize] = true;
+                        std::thread::sleep(std::time::Duration::from_millis(15));
+                    }
                 }
-                std::thread::sleep(std::time::Duration::from_millis(10));
             }
         }
 
@@ -496,61 +499,77 @@ impl<T: Transport> Device<T, ReversibleAccess> {
     }
 
     /// Sets physical keys via fast, verified Opcode 0x14 streaming and commits Custom Matrix Canvas.
-    /// Employs low-latency, zero-loss Opcode 0x14 single-key reports with 3ms pacing matching the vendor controller spec.
+    /// Employs low-latency, zero-loss Opcode 0x14 single-key reports with 15ms pacing matching the vendor controller spec.
     pub fn apply_matrix_keys(&mut self, matrix: &[RgbColor; SPARSE_KEY_COUNT]) -> Result<Option<DryRunRecord>, DeviceError> {
         if self.dry_run_mode {
             return Ok(Some(DryRunRecord {
                 buffer: [0u8; REPORT_LENGTH],
-                explanation: format!("Set {} physical keys via verified Opcode 0x14 streaming and activate Custom Matrix Canvas", KEY_DEFINITIONS.len()),
+                explanation: format!("Set all {} matrix keys via verified Opcode 0x14 streaming and commit Custom Matrix Canvas", SPARSE_KEY_COUNT),
                 safety_tier: "WRITE-REVERSIBLE",
             }));
         }
 
-        // Switch to CustomMatrixCanvas mode if not already active
-        if self.current_mode != Some(LightingMode::CustomMatrixCanvas) {
-            let config = LightingConfig {
-                zone: LightingZone::MainBacklight,
-                mode: LightingMode::CustomMatrixCanvas,
-                brightness: self.current_brightness,
-                speed: 0,
-                direction: AnimationDirection::Default,
-                color_mode: ColorMode::FixedColor,
-                color: RgbColor::new(0, 0, 0),
+        let brightness = if self.current_brightness == 0 { 4 } else { self.current_brightness };
+
+        // 1. Switch to CustomMatrixCanvas mode (Opcode 0x0B) with 30ms pacing
+        let canvas_config = LightingConfig {
+            zone: LightingZone::MainBacklight,
+            mode: LightingMode::CustomMatrixCanvas,
+            brightness,
+            speed: 0,
+            direction: AnimationDirection::Default,
+            color_mode: ColorMode::FixedColor,
+            color: RgbColor::new(0, 0, 0),
+        };
+        self.set_lighting(&canvas_config)?;
+        self.color_cache.fill(None);
+        std::thread::sleep(std::time::Duration::from_millis(30));
+
+        // 2. Synchronize dual-pad stabilizer mirrors and black out unmapped hardware register slots
+        let mut synchronized_matrix = *matrix;
+
+        const MIRROR_PAIRS: &[(u8, u8)] = &[
+            (76, 75),   // Enter
+            (84, 85),   // LeftShift
+            (97, 96),   // RightShift
+            (111, 110), // Space
+            (123, 122), // Num 0
+        ];
+        for &(k1, k2) in MIRROR_PAIRS {
+            let c1 = synchronized_matrix[k1 as usize];
+            let c2 = synchronized_matrix[k2 as usize];
+            let unified = if c1 != RgbColor::new(0, 0, 0) {
+                c1
+            } else {
+                c2
             };
-            self.set_lighting(&config)?;
-            self.color_cache.fill(None);
-            std::thread::sleep(std::time::Duration::from_millis(30));
+            synchronized_matrix[k1 as usize] = unified;
+            synchronized_matrix[k2 as usize] = unified;
         }
 
-        // Synchronize dual-pad stabilizer mirrors in memory
-        let mut synchronized_matrix = *matrix;
-        for key_def in KEY_DEFINITIONS.iter() {
-            let idx = key_def.index;
-            if let Some(mirror) = get_mirror_key_index(idx) {
-                if (mirror as usize) < SPARSE_KEY_COUNT {
-                    synchronized_matrix[mirror as usize] = synchronized_matrix[idx as usize];
-                }
+        // Unmapped/non-physical hardware slots must be explicitly zeroed to prevent ghost illumination
+        for (idx, slot) in synchronized_matrix.iter_mut().enumerate().take(SPARSE_KEY_COUNT) {
+            let uidx = idx as u8;
+            let is_physical = KEY_DEFINITIONS.iter().any(|k| k.index == uidx);
+            let is_mirror = MIRROR_PAIRS.iter().any(|&(k1, k2)| k1 == uidx || k2 == uidx);
+            if !is_physical && !is_mirror {
+                *slot = RgbColor::new(0, 0, 0);
             }
         }
 
-        // Apply color to each physical key individually, matching manual user single-key selection (10ms pacing)
-        for key_def in KEY_DEFINITIONS.iter() {
-            let idx = key_def.index;
+        // 3. Write all 126 slots sequentially using Opcode 0x14 with 15ms pacing
+        for idx in 0..SPARSE_KEY_COUNT as u8 {
             let color = synchronized_matrix[idx as usize];
             let report = build_single_key_color(idx, color)?;
             self.transport.write_report(report.as_bytes())?;
             self.color_cache[idx as usize] = Some(color);
-            std::thread::sleep(std::time::Duration::from_millis(10));
-
-            if let Some(mirror) = get_mirror_key_index(idx) {
-                let m_report = build_single_key_color(mirror, color)?;
-                self.transport.write_report(m_report.as_bytes())?;
-                if (mirror as usize) < SPARSE_KEY_COUNT {
-                    self.color_cache[mirror as usize] = Some(color);
-                }
-                std::thread::sleep(std::time::Duration::from_millis(10));
-            }
+            std::thread::sleep(std::time::Duration::from_millis(15));
         }
+
+        // 4. Send closing commit latch (Opcode 0x0B) to activate the written matrix canvas in MCU display loop
+        let commit_report = build_lighting_report(&canvas_config)?;
+        self.transport.write_report(commit_report.as_bytes())?;
+        std::thread::sleep(std::time::Duration::from_millis(20));
 
         Ok(None)
     }
@@ -974,7 +993,7 @@ mod tests {
 
     #[test]
     fn test_apply_matrix_keys_differential_and_bulk() {
-        // 1. Initial matrix application (mode switch + all 104 keys + 5 mirrors)
+        // 1. Initial matrix application: mode switch (0x0B) + all 126 slots (0x14) + commit latch (0x0B) = 128 reports
         let mock = MockTransport::new();
         let dev = Device::new_read_only(mock);
         let mut rev_dev = dev.into_reversible();
@@ -982,24 +1001,26 @@ mod tests {
         rev_dev.apply_matrix_keys(&matrix).expect("apply matrix");
 
         let reports = rev_dev.into_read_only().into_transport().outgoing;
-        // Mode switch (0x0B) + 104 physical keys + 5 dual-pad mirror keys (0x14) = 110 reports
-        assert_eq!(reports.len(), 110);
+        assert_eq!(reports.len(), 128);
         assert_eq!(reports[0][1], opcodes::SET_LIGHT_CONFIG);
-        for r in &reports[1..] {
+        for r in &reports[1..127] {
             assert_eq!(r[1], opcodes::SET_SINGLE_KEY_LED);
         }
+        assert_eq!(reports[127][1], opcodes::SET_LIGHT_CONFIG);
 
-        // 2. Full application in canvas mode applies all keys individually without mode reset (109 reports)
+        // 2. Full application in canvas mode guarantees all 126 slots are refreshed and latched (128 reports)
         let mock2 = MockTransport::new();
         let dev2 = Device::new_read_only(mock2);
         let mut rev_dev2 = dev2.into_reversible();
         rev_dev2.current_mode = Some(LightingMode::CustomMatrixCanvas);
         rev_dev2.apply_matrix_keys(&matrix).expect("apply matrix");
         let reports2 = rev_dev2.into_read_only().into_transport().outgoing;
-        assert_eq!(reports2.len(), 109);
-        for r in &reports2 {
+        assert_eq!(reports2.len(), 128);
+        assert_eq!(reports2[0][1], opcodes::SET_LIGHT_CONFIG);
+        for r in &reports2[1..127] {
             assert_eq!(r[1], opcodes::SET_SINGLE_KEY_LED);
         }
+        assert_eq!(reports2[127][1], opcodes::SET_LIGHT_CONFIG);
 
         // 3. Small diff update via set_multiple_keys_color sends only changed keys (2 keys)
         let mock3 = MockTransport::new();
