@@ -245,7 +245,7 @@ pub fn build_openrgb_controller_data(
     current_colors: &[RgbColor],
     current_mode: u8,
     current_brightness: u8,
-    current_direction: u32,
+    _current_direction: u32,
 ) -> Vec<u8> {
     let mut payload = Vec::with_capacity(4096);
 
@@ -270,8 +270,8 @@ pub fn build_openrgb_controller_data(
         ("Direct (Per-Key Custom)", 16, MODE_FLAG_HAS_BRIGHTNESS | MODE_FLAG_HAS_PER_LED_COLOR, 0, 0, MODE_COLORS_PER_LED, 0, 0, 0),
         ("Static (Constant)", 1, MODE_FLAG_HAS_BRIGHTNESS | MODE_FLAG_HAS_MODE_SPECIFIC_COLOR, 0, 0, MODE_COLORS_MODE_SPECIFIC, 0, 1, 1),
         ("Breathing", 2, MODE_FLAG_HAS_SPEED | MODE_FLAG_HAS_BRIGHTNESS | MODE_FLAG_HAS_MODE_SPECIFIC_COLOR | MODE_FLAG_HAS_RANDOM_COLOR, 0, 4, MODE_COLORS_MODE_SPECIFIC, 2, 1, 1),
-        ("Rainbow Wave (Horizontal)", 5, MODE_FLAG_HAS_SPEED | MODE_FLAG_HAS_BRIGHTNESS | MODE_FLAG_HAS_MODE_SPECIFIC_COLOR | MODE_FLAG_HAS_RANDOM_COLOR | MODE_FLAG_HAS_DIRECTION_LR, 0, 4, MODE_COLORS_MODE_SPECIFIC, 2, 1, 1),
-        ("Rainbow Wave (Vertical)", 7, MODE_FLAG_HAS_SPEED | MODE_FLAG_HAS_BRIGHTNESS | MODE_FLAG_HAS_MODE_SPECIFIC_COLOR | MODE_FLAG_HAS_RANDOM_COLOR | MODE_FLAG_HAS_DIRECTION_UD, 0, 4, MODE_COLORS_MODE_SPECIFIC, 2, 1, 1),
+        ("Rainbow Wave (Horizontal)", 5, MODE_FLAG_HAS_SPEED | MODE_FLAG_HAS_BRIGHTNESS | MODE_FLAG_HAS_MODE_SPECIFIC_COLOR | MODE_FLAG_HAS_RANDOM_COLOR, 0, 4, MODE_COLORS_MODE_SPECIFIC, 2, 1, 1),
+        ("Rainbow Wave (Vertical)", 7, MODE_FLAG_HAS_SPEED | MODE_FLAG_HAS_BRIGHTNESS | MODE_FLAG_HAS_MODE_SPECIFIC_COLOR | MODE_FLAG_HAS_RANDOM_COLOR, 0, 4, MODE_COLORS_MODE_SPECIFIC, 2, 1, 1),
         ("Spectrum Cycle", 4, MODE_FLAG_HAS_SPEED | MODE_FLAG_HAS_BRIGHTNESS, 0, 4, MODE_COLORS_NONE, 2, 0, 0),
         ("Rotate Wheel", 3, MODE_FLAG_HAS_SPEED | MODE_FLAG_HAS_BRIGHTNESS, 0, 4, MODE_COLORS_NONE, 2, 0, 0),
         ("Bloom Pulse", 6, MODE_FLAG_HAS_SPEED | MODE_FLAG_HAS_BRIGHTNESS | MODE_FLAG_HAS_MODE_SPECIFIC_COLOR | MODE_FLAG_HAS_RANDOM_COLOR, 0, 4, MODE_COLORS_MODE_SPECIFIC, 2, 1, 1),
@@ -303,13 +303,7 @@ pub fn build_openrgb_controller_data(
         payload.extend_from_slice(&spd.to_le_bytes()); // speed
         let brt_val = normalize_brightness_to_percent(current_brightness as u32) as u32;
         payload.extend_from_slice(&brt_val.to_le_bytes()); // brightness (protocol version 3+)
-        let mode_dir = if *val == 5 && current_direction == 1 {
-            OPENRGB_DIR_RIGHT
-        } else if *val == 7 && current_direction == 1 {
-            OPENRGB_DIR_DOWN
-        } else {
-            OPENRGB_DIR_LEFT
-        };
+        let mode_dir = OPENRGB_DIR_LEFT;
         payload.extend_from_slice(&mode_dir.to_le_bytes()); // direction
         payload.extend_from_slice(&col_mode.to_le_bytes()); // color_mode
         payload.extend_from_slice(&(*col_max as u16).to_le_bytes()); // colors count

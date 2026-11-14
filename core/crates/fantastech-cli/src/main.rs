@@ -417,8 +417,8 @@ enum LightCommands {
         #[arg(short, long, default_value = "2")]
         speed: u8,
 
-        /// Animation direction (default, left, right, inward, outward)
-        #[arg(long, default_value = "default")]
+        /// Animation direction (deprecated: MK894 hardware does not support direction reversal)
+        #[arg(long, default_value = "default", hide = true)]
         direction: String,
 
         /// Fixed RGB color: R G B (0..255)
@@ -965,15 +965,6 @@ fn run_command<T: Transport>(transport: T, cli: &Cli) -> Result<(), Box<dyn std:
                     println!("  Lighting Mode:     {:?} (Index {})", config.mode, config.mode as u8);
                     println!("  Brightness Level:  {} / 4", config.brightness);
                     println!("  Speed Level:       {} / 4", config.speed);
-                    let dir_str = match (config.mode, config.direction) {
-                        (LightingMode::StreamLeftToRight, AnimationDirection::Default) => "Left (◀ Right to Left)",
-                        (LightingMode::StreamLeftToRight, AnimationDirection::LeftToRight) => "Right (Left to Right ▶)",
-                        (LightingMode::StreamUpToDown, AnimationDirection::Default) => "Up (▲ Bottom to Top)",
-                        (LightingMode::StreamUpToDown, AnimationDirection::LeftToRight) => "Down (Top to Bottom ▼)",
-                        (_, AnimationDirection::Default) => "Default (0)",
-                        (_, AnimationDirection::LeftToRight) => "Reverse (1)",
-                    };
-                    println!("  Direction:         {}", dir_str);
                     println!("  Color Mode:        {:?}", config.color_mode);
                     println!("  Current Color:     RGB({}, {}, {})", config.color.r, config.color.g, config.color.b);
                     println!("==========================================");
