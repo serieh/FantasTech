@@ -1949,8 +1949,8 @@ mod windows_service {
                     use std::os::windows::process::CommandExt;
                     const DETACHED_PROCESS: u32 = 0x00000008;
                     const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
-                    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x01000000;
-                    cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB);
+                    const CREATE_NO_WINDOW: u32 = 0x08000000;
+                    cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
                 }
                 match cmd.spawn() {
                     Ok(_) => {
@@ -2020,67 +2020,23 @@ mod windows_service {
     }
 
     fn install_windows_user_service() -> Result<(), Box<dyn std::error::Error>> {
-        let bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("fantastech.exe"));
-        let exe_str = bin.display().to_string();
-        let parent_dir = bin.parent().unwrap_or(std::path::Path::new("")).display().to_string();
-
-        // 1. Create Windows Shell Link (.lnk) in User Startup folder via PowerShell
-        let ps_lnk_cmd = format!(
-            "$ws = New-Object -ComObject WScript.Shell; \
-             $s = $ws.CreateShortcut(\"$env:APPDATA\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\FantasTech Service.lnk\"); \
-             $s.TargetPath = '{}'; \
-             $s.Arguments = 'service run'; \
-             $s.WorkingDirectory = '{}'; \
-             $s.Save()",
-            exe_str.replace('\'', "''"),
-            parent_dir.replace('\'', "''")
-        );
-        let _ = Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &ps_lnk_cmd])
-            .status();
-
-        // 2. Fallback: Write .cmd launcher in Startup folder directly
-        if let Some(appdata) = std::env::var_os("APPDATA") {
-            let startup_dir = PathBuf::from(appdata)
-                .join("Microsoft").join("Windows").join("Start Menu").join("Programs").join("Startup");
+        let appdata = std::env::var_os("APPDATA").map(PathBuf::from);
+        if let Some(appdata) = appdata {
+            let startup_dir = appdata.join("Microsoft").join("Windows").join("Start Menu").join("Programs").join("Startup");
             if startup_dir.exists() {
+                let bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("fantastech.exe"));
                 let cmd_file = startup_dir.join("FantasTech-Service.cmd");
-                let content = format!("@echo off\r\nstart \"\" \"{}\" service run\r\n", exe_str);
-                let _ = std::fs::write(&cmd_file, content);
+                let content = format!("@echo off\r\nstart \"\" \"{}\" service run\r\n", bin.display());
+                std::fs::write(&cmd_file, content)?;
+                println!("✅ Registered FantasTech service for automatic user login (Startup: {}).", cmd_file.display());
+                return Ok(());
             }
         }
-
-        // 3. Register in Windows Registry Run key via PowerShell
-        let ps_reg_cmd = format!(
-            "Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name 'FantasTechService' -Value '\"{}\" service run'",
-            exe_str.replace('\'', "''")
-        );
-        let _ = Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &ps_reg_cmd])
-            .status();
-
-        // 4. Registry fallback using cmd /c reg add
-        let reg_val = format!("\"{}\" service run", exe_str);
-        let _ = Command::new("cmd")
-            .args(["/c", "reg", "add", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run", "/v", "FantasTechService", "/t", "REG_SZ", "/d", &reg_val, "/f"])
-            .status();
-
-        println!("✅ Registered FantasTech service for automatic user login (Startup folder & Registry Run).");
+        println!("ℹ️ Automatic start can also be enabled during installation via the Inno Setup installer.");
         Ok(())
     }
 
     fn uninstall_windows_user_service() -> Result<(), Box<dyn std::error::Error>> {
-        // 1. Remove Registry Run Key via PowerShell
-        let _ = Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", "Remove-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name 'FantasTechService' -ErrorAction SilentlyContinue"])
-            .status();
-
-        // 2. Remove Registry Run Key via reg delete
-        let _ = Command::new("reg")
-            .args(["delete", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run", "/v", "FantasTechService", "/f"])
-            .status();
-
-        // 3. Remove Startup folder shortcuts and batch files
         if let Some(appdata) = std::env::var_os("APPDATA") {
             let startup_dir = PathBuf::from(appdata)
                 .join("Microsoft").join("Windows").join("Start Menu").join("Programs").join("Startup");

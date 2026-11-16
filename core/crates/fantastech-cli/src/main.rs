@@ -3119,12 +3119,6 @@ fn handle_uninstall(args: &UninstallArgs) -> Result<(), Box<dyn std::error::Erro
             let _ = fs::remove_file(startup_dir.join("FantasTech-Service.cmd"));
             let _ = fs::remove_file(startup_dir.join("FantasTech Service.cmd"));
         }
-        let _ = Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", "Remove-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run' -Name 'FantasTechService' -ErrorAction SilentlyContinue"])
-            .status();
-        let _ = Command::new("reg")
-            .args(["delete", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run", "/v", "FantasTechService", "/f"])
-            .status();
     }
 
     println!("\n🧹 FantasTech has been uninstalled successfully from the system.");
