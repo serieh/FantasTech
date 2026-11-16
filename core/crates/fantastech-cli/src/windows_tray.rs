@@ -56,7 +56,6 @@ const ID_SHOW: usize = 101;
 const ID_LIGHTING_OFF: usize = 102;
 const ID_EXIT: usize = 103;
 const ID_SERVICE_TOGGLE: usize = 104;
-const ID_VOLUME_GUARD_TOGGLE: usize = 105;
 const ID_OPENRGB_TOGGLE: usize = 106;
 
 const ID_PROFILE_BASE: usize = 200;
@@ -541,18 +540,8 @@ unsafe fn show_tray_context_menu(hwnd: *mut std::ffi::c_void) {
     let srv_flag = if is_srv_running { MF_CHECKED } else { MF_UNCHECKED };
     AppendMenuW(menu, MF_STRING | srv_flag, ID_SERVICE_TOGGLE, to_wide(srv_label).as_ptr());
 
-    // Volume Guard Toggle
-    let cfg = fantastech_core::FantasTechConfig::load();
-    let vg_active = cfg.guard_volume_enabled;
-    let vg_label = if vg_active {
-        "🛡️ Volume Guard: Active"
-    } else {
-        "🛡️ Volume Guard: Disabled"
-    };
-    let vg_flag = if vg_active { MF_CHECKED } else { MF_UNCHECKED };
-    AppendMenuW(menu, MF_STRING | vg_flag, ID_VOLUME_GUARD_TOGGLE, to_wide(vg_label).as_ptr());
-
     // OpenRGB Server Toggle
+    let cfg = fantastech_core::FantasTechConfig::load();
     let openrgb_active = cfg.openrgb_enabled;
     let openrgb_label = if openrgb_active {
         format!("🌐 OpenRGB: Port {} (Active)", cfg.openrgb_port)
@@ -591,9 +580,6 @@ fn handle_tray_command(cmd_id: usize, hwnd: *mut std::ffi::c_void) {
         }
         ID_SERVICE_TOGGLE => {
             toggle_service_action();
-        }
-        ID_VOLUME_GUARD_TOGGLE => {
-            toggle_volume_guard_action();
         }
         ID_OPENRGB_TOGGLE => {
             toggle_openrgb_action();
@@ -751,17 +737,6 @@ fn toggle_service_action() {
         const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x01000000;
         cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB);
         let _ = cmd.spawn();
-    }
-}
-
-fn toggle_volume_guard_action() {
-    let mut cfg = fantastech_core::FantasTechConfig::load();
-    cfg.guard_volume_enabled = !cfg.guard_volume_enabled;
-    let _ = cfg.save();
-    if fantastech_core::is_service_running() {
-        let _ = fantastech_core::send_ipc_request(&fantastech_core::IpcRequest::SetVolumeGuardEnabled(
-            cfg.guard_volume_enabled,
-        ));
     }
 }
 
