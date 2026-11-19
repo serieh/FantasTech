@@ -11,14 +11,10 @@ mkdir -p "${HOME}/.local/share/icons/hicolor/128x128/apps"
 mkdir -p "${HOME}/.local/share/icons/hicolor/64x64/apps"
 
 cp "${SCRIPT_DIR}/apps/FantasTech.desktop" "${HOME}/.local/share/applications/"
-cp "${SCRIPT_DIR}/apps/fantastech-ctl.desktop" "${HOME}/.local/share/applications/"
 
 cp "${SCRIPT_DIR}/apps/icons/Yarny_128.png" "${HOME}/.local/share/icons/hicolor/128x128/apps/fantastech.png"
-cp "${SCRIPT_DIR}/apps/icons/Yarny_128.png" "${HOME}/.local/share/icons/hicolor/128x128/apps/fantastech-ctl.png"
 cp "${SCRIPT_DIR}/apps/icons/Yarny_64.png" "${HOME}/.local/share/icons/hicolor/64x64/apps/fantastech.png"
-cp "${SCRIPT_DIR}/apps/icons/Yarny_64.png" "${HOME}/.local/share/icons/hicolor/64x64/apps/fantastech-ctl.png"
 
-ln -sf "${SCRIPT_DIR}/FantasTech" "${HOME}/.local/bin/FantasTech"
-ln -sf "${SCRIPT_DIR}/fantastech-ctl" "${HOME}/.local/bin/fantastech-ctl"
+ln -sf "${SCRIPT_DIR}/fantastech" "${HOME}/.local/bin/fantastech"
 
 echo "FantasTech desktop integration installed successfully!"

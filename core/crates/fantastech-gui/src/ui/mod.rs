@@ -411,7 +411,7 @@ impl eframe::App for FantasTechApp {
                                         let copy_label = if cfg!(target_os = "linux") { "Copy fix command" } else { "Copy device path" };
                                         if ui.button(copy_label).clicked() {
                                             let copy_text = if cfg!(target_os = "linux") {
-                                                "sudo ./fantastech-ctl setup-udev --install && sudo udevadm trigger".to_owned()
+                                                "sudo ./fantastech setup-udev --install && sudo udevadm trigger".to_owned()
                                             } else {
                                                 path.display().to_string()
                                             };

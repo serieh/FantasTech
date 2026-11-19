@@ -145,7 +145,7 @@ impl FantasTechApp {
                 ui.label("Run this command once in your terminal:");
                 ui.add_space(4.0);
 
-                let cmd = "sudo ./fantastech-ctl setup-udev --install && sudo udevadm trigger";
+                let cmd = "sudo ./fantastech setup-udev --install && sudo udevadm trigger";
                 ui.horizontal_wrapped(|ui| {
                     let command_width = (ui.available_width() - 58.0).max(170.0);
                     ui.add(

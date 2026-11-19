@@ -435,11 +435,6 @@ pub(crate) fn handle_install(args: &InstallArgs) -> Result<(), Box<dyn std::erro
         println!("✅ Installed CLI binary to {}", target_bin.display());
     }
 
-    let target_ctl = local_bin.join("fantastech-ctl");
-    let _ = fs::remove_file(&target_ctl);
-    #[cfg(unix)]
-    let _ = std::os::unix::fs::symlink(&target_bin, &target_ctl);
-
     // 2. Install desktop application launcher & icon
     let apps_dir = home_path.join(".local/share/applications");
     fs::create_dir_all(&apps_dir)?;
@@ -537,7 +532,7 @@ pub(crate) fn handle_uninstall(args: &UninstallArgs) -> Result<(), Box<dyn std::
     }
 
     // 5. Remove binaries
-    for bin_name in ["fantastech", "fantastech-ctl", "fantastech-gui"] {
+    for bin_name in ["fantastech", "fantastech-gui"] {
         let bin = home_path.join(format!(".local/bin/{}", bin_name));
         if bin.exists() {
             let _ = fs::remove_file(&bin);

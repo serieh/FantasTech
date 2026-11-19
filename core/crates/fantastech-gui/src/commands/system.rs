@@ -24,8 +24,7 @@ impl FantasTechApp {
                 let gui_src = parent.join("fantastech-gui");
                 if cli_src.exists() {
                     let _ = std::fs::copy(&cli_src, bin_dir.join("fantastech"));
-                    let _ = std::fs::copy(&cli_src, bin_dir.join("fantastech-ctl"));
-                    logs.push("Installed fantastech and fantastech-ctl to ~/.local/bin/");
+                    logs.push("Installed fantastech to ~/.local/bin/");
                 }
                 if gui_src.exists() {
                     let _ = std::fs::copy(&gui_src, bin_dir.join("fantastech-gui"));
@@ -93,7 +92,6 @@ impl FantasTechApp {
         let _ = std::fs::remove_file(std::path::PathBuf::from(&home).join(".local/share/applications/fantastech.desktop"));
         let _ = std::fs::remove_file(std::path::PathBuf::from(&home).join(".local/share/icons/hicolor/scalable/apps/fantastech.svg"));
         let _ = std::fs::remove_file(std::path::PathBuf::from(&home).join(".local/bin/fantastech"));
-        let _ = std::fs::remove_file(std::path::PathBuf::from(&home).join(".local/bin/fantastech-ctl"));
         let _ = std::fs::remove_file(std::path::PathBuf::from(&home).join(".local/bin/fantastech-gui"));
         self.install_status_message = Some("Successfully uninstalled FantasTech system integration (binaries, desktop launcher, systemd service).".to_string());
         self.status_message = "Uninstalled FantasTech system integration".to_string();

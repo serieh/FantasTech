@@ -282,11 +282,9 @@ pub(super) fn service_action(action: &str) -> Result<(), String> {
                 if let Ok(current) = std::env::current_exe() {
                     if let Some(parent) = current.parent() {
                         candidates.push(parent.join("fantastech"));
-                        candidates.push(parent.join("fantastech-ctl"));
                         candidates.push(parent.join("../release/fantastech"));
                     }
                 }
-                candidates.push(PathBuf::from("./fantastech-ctl"));
                 candidates.push(PathBuf::from("./core/target/release/fantastech"));
                 candidates.push(home.join(".local/bin/fantastech"));
                 candidates.push(PathBuf::from("/usr/local/bin/fantastech"));
