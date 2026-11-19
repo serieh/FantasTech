@@ -1,4 +1,4 @@
-# ==============================================================================
+﻿# ==============================================================================
 # FantasTech — Standalone Native Windows Installer Generator
 # ==============================================================================
 # Generates a self-contained, standalone Windows setup executable
@@ -9,7 +9,7 @@ param(
     [string]$OutputDir = "$PSScriptRoot\..\..\dist",
     [string]$ExePath = "$PSScriptRoot\..\..\core\target\release\fantastech.exe",
     [string]$IconPath = "$PSScriptRoot\..\..\assets\icons\fantastech.ico",
-    [string]$Version = "0.1.0"
+    [string]$Version = "0.1.5"
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,7 +25,7 @@ if (-not (Test-Path $OutputDir)) {
 
 $OutputSetupExe = Join-Path $OutputDir "FantasTech-Setup-$Version.exe"
 
-Write-Host "⚙️ Compiling standalone Windows installer using native .NET compiler..." -ForegroundColor Cyan
+Write-Host "Compiling standalone Windows installer using native .NET compiler..." -ForegroundColor Cyan
 
 # Read binary bytes and encode to compressed base64
 $exeBytes = [System.IO.File]::ReadAllBytes((Resolve-Path $ExePath))
@@ -259,7 +259,7 @@ namespace FantasTechInstaller
                     {
                         key.SetValue("DisplayName", AppName);
                         key.SetValue("DisplayVersion", AppVersion);
-                        key.SetValue("Publisher", "FantasTech Contributors");
+                        key.SetValue("Publisher", "Ahmad Serieh");
                         key.SetValue("DisplayIcon", targetExe);
                         key.SetValue("InstallLocation", installDir);
                         key.SetValue("UninstallString", "\"" + uninstallerBat + "\"");
@@ -308,7 +308,7 @@ $tempCs = Join-Path ([System.IO.Path]::GetTempPath()) "FantasTechSetup.cs"
 [System.IO.File]::WriteAllText($tempCs, $csharpSource)
 
 if (Test-Path $cscPath) {
-    Write-Host "🔨 Invoking csc.exe: $cscPath" -ForegroundColor DarkGray
+    Write-Host "Invoking csc.exe: $cscPath" -ForegroundColor DarkGray
     $iconArg = if (Test-Path $IconPath) { "/win32icon:`"$IconPath`"" } else { "" }
     $compileCmd = "& `"$cscPath`" /target:winexe /optimize+ /platform:anycpu $iconArg /out:`"$OutputSetupExe`" `"$tempCs`""
     Invoke-Expression $compileCmd | Out-Null
@@ -320,7 +320,7 @@ if (Test-Path $cscPath) {
 Remove-Item -Path $tempCs -Force -ErrorAction SilentlyContinue
 
 if (Test-Path $OutputSetupExe) {
-    Write-Host "✅ Created standalone Windows Setup executable: $OutputSetupExe" -ForegroundColor Green
+    Write-Host "Created standalone Windows Setup executable: $OutputSetupExe" -ForegroundColor Green
 } else {
     Write-Error "Failed to generate $OutputSetupExe"
     exit 1

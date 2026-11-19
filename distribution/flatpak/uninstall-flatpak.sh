@@ -5,7 +5,7 @@
 set -euo pipefail
 
 echo "===================================================================="
-echo "🛑 Uninstalling FantasTech Flatpak & Cleaning State"
+echo "Uninstalling FantasTech Flatpak & Cleaning State"
 echo "===================================================================="
 
 # 1. Stop any running background service or tray daemon processes
@@ -18,7 +18,7 @@ PURGE_DATA=false
 if [[ "${1:-}" == "--delete-data" || "${1:-}" == "--purge" || "${1:-}" == "-y" ]]; then
     PURGE_DATA=true
 else
-    read -r -p "❓ Do you want to delete all saved profiles and configuration files? [y/N]: " response || true
+    read -r -p "Do you want to delete all saved profiles and configuration files? [y/N]: " response || true
     if [[ "${response:-}" =~ ^([yY][eE][sS]|[yY])$ ]]; then
         PURGE_DATA=true
     fi
@@ -34,7 +34,7 @@ if [ "$PURGE_DATA" = true ]; then
     rm -rf "${HOME}/.var/app/org.fantastech.FantasTech"
     rm -rf "${HOME}/.var/app/io.github.fantastech.FantasTech"
     rm -rf "${HOME}/.config/fantastech"
-    echo "   ✅ Configurations and saved profiles purged."
+    echo "   [OK] Configurations and saved profiles purged."
 else
     flatpak uninstall --user -y org.fantastech.FantasTech 2>/dev/null || true
     flatpak uninstall --system -y org.fantastech.FantasTech 2>/dev/null || true
@@ -60,11 +60,11 @@ fi
 # 5. Check for system-level udev rules
 if [[ -f /etc/udev/rules.d/99-fantastech.rules || -f /etc/udev/rules.d/70-fantech-mk894.rules || -f /etc/udev/rules.d/60-fantastech-mk894.rules ]]; then
     echo ""
-    echo "ℹ️  System hardware udev rules remain in /etc/udev/rules.d/."
+    echo "[INFO] System hardware udev rules remain in /etc/udev/rules.d/."
     echo "   To remove them, run:"
     echo "   sudo rm -f /etc/udev/rules.d/*fantastech*.rules /etc/udev/rules.d/*fantech*.rules && sudo udevadm control --reload"
 fi
 
 echo "===================================================================="
-echo "🎉 FantasTech Flatpak uninstallation and cleanup complete!"
+echo "[OK] FantasTech Flatpak uninstallation and cleanup complete!"
 echo "===================================================================="

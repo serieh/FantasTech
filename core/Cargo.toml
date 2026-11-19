@@ -32,7 +32,8 @@ lto = "thin"
 codegen-units = 1
 panic = "abort"
 # Preserving symbol tables prevents Windows Defender ML from misclassifying the PE binary as a packed malware stub
-strip = "none"
+# strip = "debuginfo" removes DWARF tables to slim release size by ~70% while keeping symbol names intact
+strip = "debuginfo"
 
 [patch.crates-io]
 pollster = { path = "vendor/pollster" }

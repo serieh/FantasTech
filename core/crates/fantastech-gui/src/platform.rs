@@ -4,10 +4,17 @@
 //! detection never run from the egui frame callback.
 
 use super::{is_service_running, HidrawTransport, TransportError};
+use fantastech_core::ServiceStatus;
+use fantastech_device::Device;
+use fantastech_protocol::commands::DeviceInfo;
+use fantastech_protocol::constants::SPARSE_KEY_COUNT;
+use fantastech_protocol::keymap::{KeyAction, KeyLayer};
+use fantastech_protocol::lighting::LightingConfig;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender};
 use std::time::Duration;
 
+#[allow(dead_code)]
 const CONNECTION_POLL_INTERVAL: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone)]
@@ -17,6 +24,27 @@ pub(super) struct ConnectionSnapshot {
     pub(super) is_emulator: bool,
     pub(super) permission_denied_node: Option<PathBuf>,
     pub(super) error_message: Option<String>,
+    pub(super) lighting_config: Option<LightingConfig>,
+    pub(super) device_info: Option<DeviceInfo>,
+    pub(super) hardware_keymaps: Option<([KeyAction; SPARSE_KEY_COUNT], [KeyAction; SPARSE_KEY_COUNT])>,
+    pub(super) service_status: Option<ServiceStatus>,
+}
+
+impl ConnectionSnapshot {
+    #[cfg(test)]
+    pub(super) fn new_mock() -> Self {
+        Self {
+            service_active: false,
+            connected: true,
+            is_emulator: true,
+            permission_denied_node: None,
+            error_message: None,
+            lighting_config: None,
+            device_info: None,
+            hardware_keymaps: None,
+            service_status: None,
+        }
+    }
 }
 
 pub(super) struct ConnectionMonitor {
@@ -25,6 +53,14 @@ pub(super) struct ConnectionMonitor {
 }
 
 impl ConnectionMonitor {
+    #[cfg(test)]
+    pub(super) fn new_mock() -> Self {
+        let (_sender, receiver) = mpsc::channel();
+        let (refresh_sender, _refresh_receiver) = mpsc::sync_channel(1);
+        Self { receiver, refresh_sender }
+    }
+
+    #[allow(dead_code)]
     pub(super) fn start() -> Self {
         let (sender, receiver) = mpsc::channel();
         let fallback_sender = sender.clone();
@@ -34,14 +70,17 @@ impl ConnectionMonitor {
         // A detached thread avoids blocking window shutdown on a slow HID scan.
         let worker = std::thread::Builder::new()
             .name("fantastech-connection-monitor".to_owned())
-            .spawn(move || loop {
-                let snapshot = detect_connection();
-                if sender.send(snapshot).is_err() {
-                    break;
-                }
-                match refresh_receiver.recv_timeout(CONNECTION_POLL_INTERVAL) {
-                    Ok(()) | Err(RecvTimeoutError::Timeout) => {}
-                    Err(RecvTimeoutError::Disconnected) => break,
+            .spawn(move || {
+                loop {
+                    let full_scan = match refresh_receiver.recv_timeout(CONNECTION_POLL_INTERVAL) {
+                        Ok(()) => true,
+                        Err(RecvTimeoutError::Timeout) => false,
+                        Err(RecvTimeoutError::Disconnected) => break,
+                    };
+                    let snapshot = detect_connection(full_scan);
+                    if sender.send(snapshot).is_err() {
+                        break;
+                    }
                 }
             });
 
@@ -52,6 +91,10 @@ impl ConnectionMonitor {
                 is_emulator: true,
                 permission_denied_node: None,
                 error_message: Some(format!("Could not start the connection monitor: {error}")),
+                lighting_config: None,
+                device_info: None,
+                hardware_keymaps: None,
+                service_status: None,
             });
         }
 
@@ -71,31 +114,72 @@ impl ConnectionMonitor {
     }
 }
 
-fn detect_connection() -> ConnectionSnapshot {
+#[allow(dead_code)]
+pub(super) fn detect_connection(include_keymaps: bool) -> ConnectionSnapshot {
     if is_service_running() {
+        let lighting_config = match fantastech_core::send_ipc_request(&fantastech_core::IpcRequest::GetLightingConfig) {
+            Ok(fantastech_core::IpcResponse::LightingConfig(cfg)) => Some(cfg),
+            _ => None,
+        };
+        let device_info = match fantastech_core::send_ipc_request(&fantastech_core::IpcRequest::GetDeviceInfo) {
+            Ok(fantastech_core::IpcResponse::DeviceInfo(info)) => Some(info),
+            _ => None,
+        };
+        let service_status = match fantastech_core::send_ipc_request(&fantastech_core::IpcRequest::GetStatus) {
+            Ok(fantastech_core::IpcResponse::Status(st)) => Some(st),
+            _ => None,
+        };
         return ConnectionSnapshot {
             service_active: true,
             connected: true,
             is_emulator: false,
             permission_denied_node: None,
             error_message: None,
+            lighting_config,
+            device_info,
+            hardware_keymaps: None,
+            service_status,
         };
     }
 
     match HidrawTransport::discover() {
-        Ok(_) => ConnectionSnapshot {
-            service_active: false,
-            connected: true,
-            is_emulator: false,
-            permission_denied_node: None,
-            error_message: None,
-        },
+        Ok(transport) => {
+            let mut dev = Device::new_read_only(transport);
+            let device_info = dev.query_info().ok();
+            let lighting_config = dev.query_light_config().ok();
+            let hardware_keymaps = if include_keymaps {
+                let base_layer = dev.read_keymap_layer(KeyLayer::Base).ok();
+                let fn_layer = dev.read_keymap_layer(KeyLayer::Fn).ok();
+                match (base_layer, fn_layer) {
+                    (Some(b), Some(f)) => Some((b, f)),
+                    (Some(b), None) => Some((b, [KeyAction::disabled(); SPARSE_KEY_COUNT])),
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            ConnectionSnapshot {
+                service_active: false,
+                connected: true,
+                is_emulator: false,
+                permission_denied_node: None,
+                error_message: None,
+                lighting_config,
+                device_info,
+                hardware_keymaps,
+                service_status: None,
+            }
+        }
         Err(TransportError::PermissionDenied(path)) => ConnectionSnapshot {
             service_active: false,
             connected: false,
             is_emulator: false,
             permission_denied_node: Some(path),
             error_message: None,
+            lighting_config: None,
+            device_info: None,
+            hardware_keymaps: None,
+            service_status: None,
         },
         Err(_) => ConnectionSnapshot {
             service_active: false,
@@ -103,6 +187,10 @@ fn detect_connection() -> ConnectionSnapshot {
             is_emulator: true,
             permission_denied_node: None,
             error_message: None,
+            lighting_config: None,
+            device_info: None,
+            hardware_keymaps: None,
+            service_status: None,
         },
     }
 }
@@ -486,14 +574,14 @@ pub(super) fn permission_error(operation: &str, path: &std::path::Path) -> Strin
     #[cfg(target_os = "linux")]
     {
         format!(
-            "⚠️ Cannot {operation}: access to {} is denied. Install the FantasTech udev rule, then reconnect the keyboard.",
+            "Cannot {operation}: access to {} is denied. Install the FantasTech udev rule, then reconnect the keyboard.",
             path.display()
         )
     }
     #[cfg(not(target_os = "linux"))]
     {
         format!(
-            "⚠️ Cannot {operation}: the operating system denied access to {}. Check device permissions and confirm that a compatible HID backend is available.",
+            "Cannot {operation}: the operating system denied access to {}. Check device permissions and confirm that a compatible HID backend is available.",
             path.display()
         )
     }

@@ -57,7 +57,7 @@ if defined ISCC_BIN (
         echo [ERROR] Inno Setup compilation failed.
         exit /b !ERRORLEVEL!
     )
-    echo [SUCCESS] Windows Inno Setup installer generated in dist\FantasTech-Setup-0.1.0.exe
+    echo [SUCCESS] Windows Inno Setup installer generated in dist\FantasTech-Setup-0.1.5.exe
 ) else (
     echo [INFO] Inno Setup compiler unavailable. Generating native standalone Windows installer...
     powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0make-standalone-installer.ps1"
@@ -65,9 +65,9 @@ if defined ISCC_BIN (
         echo [ERROR] Standalone installer generation failed.
         exit /b !ERRORLEVEL!
     )
-    echo [SUCCESS] Standalone Windows installer generated in dist\FantasTech-Setup-0.1.0.exe
+    echo [SUCCESS] Standalone Windows installer generated in dist\FantasTech-Setup-0.1.5.exe
 )
 
 echo ==============================================================================
-echo [SUCCESS] Windows Installer ready: dist\FantasTech-Setup-0.1.0.exe
+echo [SUCCESS] Windows Installer ready: dist\FantasTech-Setup-0.1.5.exe
 echo ==============================================================================

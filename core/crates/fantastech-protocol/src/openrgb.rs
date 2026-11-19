@@ -116,6 +116,21 @@ fn write_color(buf: &mut Vec<u8>, color: RgbColor) {
     buf.push(0x00);
 }
 
+#[inline]
+fn read_u16_le(slice: &[u8], offset: usize) -> Option<u16> {
+    slice.get(offset..offset + 2).and_then(|s| s.try_into().ok()).map(u16::from_le_bytes)
+}
+
+#[inline]
+fn read_u32_le(slice: &[u8], offset: usize) -> Option<u32> {
+    slice.get(offset..offset + 4).and_then(|s| s.try_into().ok()).map(u32::from_le_bytes)
+}
+
+#[inline]
+fn read_i32_le(slice: &[u8], offset: usize) -> Option<i32> {
+    slice.get(offset..offset + 4).and_then(|s| s.try_into().ok()).map(i32::from_le_bytes)
+}
+
 /// Normalizes an input brightness setting (0..=100 or 0..=4) to a percentage (0..=100).
 pub fn normalize_brightness_to_percent(b: u32) -> u8 {
     if b == 0 {
@@ -367,12 +382,7 @@ pub fn build_openrgb_controller_data(
 /// Parses an OpenRGB `RGBCONTROLLER_UPDATELEDS` packet body.
 /// Returns the list of parsed `RgbColor` values.
 pub fn parse_openrgb_update_leds(payload: &[u8]) -> Result<Vec<RgbColor>, ProtocolError> {
-    if payload.len() < 6 {
-        return Err(ProtocolError::InvalidLength(payload.len()));
-    }
-    // byte 0..4: data_size
-    // byte 4..6: num_colors (u16)
-    let num_colors = u16::from_le_bytes(payload[4..6].try_into().unwrap()) as usize;
+    let num_colors = read_u16_le(payload, 4).ok_or(ProtocolError::InvalidLength(payload.len()))? as usize;
     let expected_len = 6 + (num_colors * 4);
     if payload.len() < expected_len {
         return Err(ProtocolError::InvalidLength(payload.len()));
@@ -393,14 +403,8 @@ pub fn parse_openrgb_update_leds(payload: &[u8]) -> Result<Vec<RgbColor>, Protoc
 /// Parses an OpenRGB `RGBCONTROLLER_UPDATEZONELEDS` packet body.
 /// Returns (zone_index, list of `RgbColor` values).
 pub fn parse_openrgb_update_zone_leds(payload: &[u8]) -> Result<(u32, Vec<RgbColor>), ProtocolError> {
-    if payload.len() < 10 {
-        return Err(ProtocolError::InvalidLength(payload.len()));
-    }
-    // byte 0..4: data_size
-    // byte 4..8: zone_idx (u32)
-    // byte 8..10: num_colors (u16)
-    let zone_idx = u32::from_le_bytes(payload[4..8].try_into().unwrap());
-    let num_colors = u16::from_le_bytes(payload[8..10].try_into().unwrap()) as usize;
+    let zone_idx = read_u32_le(payload, 4).ok_or(ProtocolError::InvalidLength(payload.len()))?;
+    let num_colors = read_u16_le(payload, 8).ok_or(ProtocolError::InvalidLength(payload.len()))? as usize;
     let expected_len = 10 + (num_colors * 4);
     if payload.len() < expected_len {
         return Err(ProtocolError::InvalidLength(payload.len()));
@@ -424,7 +428,7 @@ pub fn parse_openrgb_update_single_led(payload: &[u8]) -> Result<(i32, RgbColor)
     if payload.len() < 7 {
         return Err(ProtocolError::InvalidLength(payload.len()));
     }
-    let led_index = i32::from_le_bytes(payload[0..4].try_into().unwrap());
+    let led_index = read_i32_le(payload, 0).ok_or(ProtocolError::InvalidLength(payload.len()))?;
     let r = payload[4];
     let g = payload[5];
     let b = payload[6];
@@ -434,12 +438,7 @@ pub fn parse_openrgb_update_single_led(payload: &[u8]) -> Result<(i32, RgbColor)
 /// Parses an OpenRGB `RGBCONTROLLER_SETMODE` or `RGBCONTROLLER_SAVEMODE` packet body.
 /// Extracts mode index, name, hardware value, speed, brightness, direction, color mode, and colors.
 pub fn parse_openrgb_set_mode(payload: &[u8]) -> Result<OpenRgbModeUpdate, ProtocolError> {
-    if payload.len() < 8 {
-        return Err(ProtocolError::InvalidLength(payload.len()));
-    }
-    // Offset 0..4: data_size (u32)
-    // Offset 4..8: mode_idx (i32)
-    let mode_idx = i32::from_le_bytes(payload[4..8].try_into().unwrap());
+    let mode_idx = read_i32_le(payload, 4).ok_or(ProtocolError::InvalidLength(payload.len()))?;
     if payload.len() < 10 {
         return Ok(OpenRgbModeUpdate {
             mode_idx,
@@ -455,7 +454,7 @@ pub fn parse_openrgb_set_mode(payload: &[u8]) -> Result<OpenRgbModeUpdate, Proto
     }
 
     let mut pos = 8;
-    let str_len = u16::from_le_bytes(payload[pos..pos + 2].try_into().unwrap()) as usize;
+    let str_len = read_u16_le(payload, pos).ok_or(ProtocolError::InvalidLength(payload.len()))? as usize;
     pos += 2;
     if payload.len() < pos + str_len {
         return Err(ProtocolError::InvalidLength(payload.len()));
@@ -479,18 +478,18 @@ pub fn parse_openrgb_set_mode(payload: &[u8]) -> Result<OpenRgbModeUpdate, Proto
         });
     }
 
-    let value = i32::from_le_bytes(payload[pos..pos + 4].try_into().unwrap());
-    let flags = u32::from_le_bytes(payload[pos + 4..pos + 8].try_into().unwrap());
+    let value = read_i32_le(payload, pos).unwrap_or(0);
+    let flags = read_u32_le(payload, pos + 4).unwrap_or(0);
     // skip spd_min (4), spd_max (4), brt_min (4), brt_max (4), col_min (4), col_max (4) = 24 bytes
-    let speed = u32::from_le_bytes(payload[pos + 32..pos + 36].try_into().unwrap());
-    let brightness = u32::from_le_bytes(payload[pos + 36..pos + 40].try_into().unwrap());
-    let direction = u32::from_le_bytes(payload[pos + 40..pos + 44].try_into().unwrap());
-    let color_mode = u32::from_le_bytes(payload[pos + 44..pos + 48].try_into().unwrap());
+    let speed = read_u32_le(payload, pos + 32).unwrap_or(2);
+    let brightness = read_u32_le(payload, pos + 36).unwrap_or(4);
+    let direction = read_u32_le(payload, pos + 40).unwrap_or(0);
+    let color_mode = read_u32_le(payload, pos + 44).unwrap_or(0);
     pos += 48;
 
     let mut colors = Vec::new();
     if payload.len() >= pos + 2 {
-        let col_count = u16::from_le_bytes(payload[pos..pos + 2].try_into().unwrap()) as usize;
+        let col_count = read_u16_le(payload, pos).unwrap_or(0) as usize;
         pos += 2;
         for _ in 0..col_count {
             if pos + 4 <= payload.len() {
@@ -635,5 +634,23 @@ mod tests {
         assert_eq!(resolve_openrgb_mode_named(99, 0, "Off"), LightingMode::Off);
         // Fallback to mode_idx when name is unknown
         assert_eq!(resolve_openrgb_mode_named(1, 0, ""), LightingMode::Static);
+    }
+
+    #[test]
+    fn test_openrgb_payload_parsers_malformed_input() {
+        // Truncated payloads must return Err(InvalidLength), NEVER panic
+        assert!(parse_openrgb_update_leds(&[]).is_err());
+        assert!(parse_openrgb_update_leds(&[0; 5]).is_err());
+        assert!(parse_openrgb_update_leds(&[0, 0, 0, 0, 10, 0]).is_err()); // claims 10 colors, 0 provided
+
+        assert!(parse_openrgb_update_zone_leds(&[]).is_err());
+        assert!(parse_openrgb_update_zone_leds(&[0; 9]).is_err());
+        assert!(parse_openrgb_update_zone_leds(&[0, 0, 0, 0, 0, 0, 0, 0, 5, 0]).is_err()); // claims 5 colors
+
+        assert!(parse_openrgb_update_single_led(&[]).is_err());
+        assert!(parse_openrgb_update_single_led(&[0; 6]).is_err());
+
+        assert!(parse_openrgb_set_mode(&[]).is_err());
+        assert!(parse_openrgb_set_mode(&[0; 7]).is_err());
     }
 }

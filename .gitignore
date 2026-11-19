@@ -40,3 +40,7 @@ Thumbs.db
 
 # Local vendor archive and proprietary samples (see archive/INVENTORY.md)
 archive/
+
+# Reverse-engineering research and extraction notes (local only, excluded from repository)
+docs/research/
+**/research/

@@ -15,6 +15,7 @@ use fantastech_core::WINDOWS_IPC_PORT;
 use fantastech_core::ipc_socket_path;
 use fantastech_device::{Device, PersistentAccess, ReversibleAccess};
 use fantastech_emulator::VirtualKeyboardEmulator;
+use fantastech_protocol::commands::DeviceInfo;
 use fantastech_protocol::constants::SPARSE_KEY_COUNT;
 use fantastech_protocol::keymap::KeyLayer;
 use fantastech_protocol::lighting::{
@@ -49,6 +50,8 @@ use std::time::Duration;
 
 /// Trait object representing an active keyboard device handle.
 pub trait DeviceControl: Send {
+    fn get_device_info(&mut self) -> Result<DeviceInfo, String>;
+    fn get_lighting_config(&mut self) -> Result<LightingConfig, String>;
     fn apply_lighting_config(&mut self, config: &LightingConfig) -> Result<(), String>;
     fn apply_matrix_canvas(&mut self, matrix: &[RgbColor; SPARSE_KEY_COUNT]) -> Result<(), String>;
     fn set_single_key(&mut self, key_idx: u8, color: RgbColor) -> Result<(), String>;
@@ -106,6 +109,14 @@ impl<T: Transport + 'static> DeviceHolder<T> {
 }
 
 impl<T: Transport + 'static> DeviceControl for DeviceHolder<T> {
+    fn get_device_info(&mut self) -> Result<DeviceInfo, String> {
+        self.ensure_reversible()?.query_info().map_err(|e| e.to_string())
+    }
+
+    fn get_lighting_config(&mut self) -> Result<LightingConfig, String> {
+        self.ensure_reversible()?.query_light_config().map_err(|e| e.to_string())
+    }
+
     fn apply_lighting_config(&mut self, config: &LightingConfig) -> Result<(), String> {
         self.ensure_reversible()?.set_lighting(config).map(|_| ()).map_err(|e| e.to_string())
     }
@@ -158,6 +169,120 @@ impl<T: Transport + 'static> DeviceControl for DeviceHolder<T> {
             DeviceHolder::Empty => return Err("Device state empty".into()),
         };
         Ok(info.firmware_version)
+    }
+}
+
+#[inline]
+pub fn safe_lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|p| p.into_inner())
+}
+
+#[allow(dead_code)]
+pub struct DynamicHidDeviceControl {
+    device: Option<DeviceHolder<HidrawTransport>>,
+    explicit_path: Option<std::path::PathBuf>,
+}
+
+#[allow(dead_code)]
+impl DynamicHidDeviceControl {
+    pub fn new(explicit_path: Option<std::path::PathBuf>) -> Self {
+        let mut control = Self {
+            device: None,
+            explicit_path,
+        };
+        let _ = control.try_reconnect();
+        control
+    }
+
+    fn try_reconnect(&mut self) -> bool {
+        let res = if let Some(ref path) = self.explicit_path {
+            HidrawTransport::open(path)
+        } else {
+            HidrawTransport::discover()
+        };
+
+        match res {
+            Ok(transport) => {
+                let dev = Device::new_read_only(transport).into_reversible();
+                self.device = Some(DeviceHolder::Reversible(dev));
+                println!("[INFO] Connected/Reconnected to physical Fantech MK894.");
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    fn with_dev<R, F>(&mut self, mut f: F) -> Result<R, String>
+    where
+        F: FnMut(&mut DeviceHolder<HidrawTransport>) -> Result<R, String>,
+    {
+        if self.device.is_none() {
+            self.try_reconnect();
+        }
+        if let Some(ref mut dev) = self.device {
+            match f(dev) {
+                Ok(val) => return Ok(val),
+                Err(e) => {
+                    let is_disconnect = e.contains("No such device")
+                        || e.contains("Broken pipe")
+                        || e.contains("os error 19")
+                        || e.contains("os error 32")
+                        || e.contains("Input/output error")
+                        || e.contains("device not found")
+                        || e.contains("error 1167")
+                        || e.contains("error 6");
+                    if is_disconnect {
+                        self.device = None;
+                        if self.try_reconnect() {
+                            if let Some(ref mut reconnected_dev) = self.device {
+                                return f(reconnected_dev);
+                            }
+                        }
+                    }
+                    return Err(e);
+                }
+            }
+        }
+        Err("Physical keyboard not connected".into())
+    }
+}
+
+impl DeviceControl for DynamicHidDeviceControl {
+    fn get_device_info(&mut self) -> Result<DeviceInfo, String> {
+        self.with_dev(|d| d.get_device_info())
+    }
+    fn get_lighting_config(&mut self) -> Result<LightingConfig, String> {
+        self.with_dev(|d| d.get_lighting_config())
+    }
+    fn apply_lighting_config(&mut self, config: &LightingConfig) -> Result<(), String> {
+        self.with_dev(|d| d.apply_lighting_config(config))
+    }
+    fn apply_matrix_canvas(&mut self, matrix: &[RgbColor; SPARSE_KEY_COUNT]) -> Result<(), String> {
+        self.with_dev(|d| d.apply_matrix_canvas(matrix))
+    }
+    fn set_single_key(&mut self, key_idx: u8, color: RgbColor) -> Result<(), String> {
+        self.with_dev(|d| d.set_single_key(key_idx, color))
+    }
+    fn turn_off_lighting(&mut self) -> Result<(), String> {
+        self.with_dev(|d| d.turn_off_lighting())
+    }
+    fn switch_hw_profile(&mut self, index: u8) -> Result<(), String> {
+        self.with_dev(|d| d.switch_hw_profile(index))
+    }
+    fn set_sleep_timeout(&mut self, seconds: u16) -> Result<(), String> {
+        self.with_dev(|d| d.set_sleep_timeout(seconds))
+    }
+    fn factory_reset(&mut self) -> Result<(), String> {
+        self.with_dev(|d| d.factory_reset())
+    }
+    fn apply_keymap_layer(&mut self, layer: KeyLayer, actions: &[fantastech_protocol::keymap::KeyAction; SPARSE_KEY_COUNT]) -> Result<(), String> {
+        self.with_dev(|d| d.apply_keymap_layer(layer, actions))
+    }
+    fn apply_macro_memory(&mut self, table: &[u8; fantastech_protocol::constants::MACRO_MEMORY_SIZE]) -> Result<(), String> {
+        self.with_dev(|d| d.apply_macro_memory(table))
+    }
+    fn get_firmware_version(&mut self) -> Result<String, String> {
+        self.with_dev(|d| d.get_firmware_version())
     }
 }
 
@@ -234,12 +359,12 @@ pub fn spawn_openrgb_server(
         let addr = format!("{}:{}", bind, port);
         let listener = match TcpListener::bind(&addr) {
             Ok(l) => {
-                println!("🌐 OpenRGB SDK server listening on tcp://{}", addr);
+                println!("[INFO] OpenRGB SDK server listening on tcp://{}", addr);
                 server_active_flag.store(true, Ordering::SeqCst);
                 l
             }
             Err(e) => {
-                eprintln!("⚠️ Failed to bind OpenRGB TCP port {}: {}", addr, e);
+                eprintln!("[WARN] Failed to bind OpenRGB TCP port {}: {}", addr, e);
                 server_active_flag.store(false, Ordering::SeqCst);
                 return;
             }
@@ -264,7 +389,7 @@ pub fn spawn_openrgb_server(
                         }
                         Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
                         Err(e) => {
-                            eprintln!("⚠️ OpenRGB accept error: {}", e);
+                            eprintln!("[WARN] OpenRGB accept error: {}", e);
                         }
                     }
                 }
@@ -274,7 +399,7 @@ pub fn spawn_openrgb_server(
         }
 
         server_active_flag.store(false, Ordering::SeqCst);
-        println!("🌐 OpenRGB SDK server stopped.");
+        println!("[INFO] OpenRGB SDK server stopped.");
     });
 }
 
@@ -311,7 +436,7 @@ pub fn handle_openrgb_client(
             }
             NET_PACKET_ID_REQUEST_CONTROLLER_DATA => {
                 let (current_colors, current_b, current_m) = {
-                    let unscaled = cached_matrix.lock().unwrap();
+                    let unscaled = safe_lock(&cached_matrix);
                     let mut cols = Vec::with_capacity(KEY_DEFINITIONS.len());
                     for k in KEY_DEFINITIONS.iter() {
                         cols.push(unscaled[k.index as usize]);
@@ -359,7 +484,7 @@ pub fn handle_openrgb_client(
                     let is_canvas_mode = openrgb_mode.load(Ordering::SeqCst) == 16;
                     let mut scaled = [RgbColor::new(0, 0, 0); SPARSE_KEY_COUNT];
                     {
-                        let mut unscaled = cached_matrix.lock().unwrap();
+                        let mut unscaled = safe_lock(&cached_matrix);
                         for (i, c) in led_colors.iter().enumerate().take(KEY_DEFINITIONS.len()) {
                             let k = &KEY_DEFINITIONS[i];
                             unscaled[k.index as usize] = *c;
@@ -371,7 +496,7 @@ pub fn handle_openrgb_client(
                         }
                     }
                     if is_canvas_mode {
-                        let mut dev = dev_control.lock().unwrap();
+                        let mut dev = safe_lock(&dev_control);
                         let _ = dev.apply_matrix_canvas(&scaled);
                     }
                 }
@@ -382,7 +507,7 @@ pub fn handle_openrgb_client(
                     let is_canvas_mode = openrgb_mode.load(Ordering::SeqCst) == 16;
                     let mut scaled = [RgbColor::new(0, 0, 0); SPARSE_KEY_COUNT];
                     {
-                        let mut unscaled = cached_matrix.lock().unwrap();
+                        let mut unscaled = safe_lock(&cached_matrix);
                         for (i, c) in led_colors.iter().enumerate().take(KEY_DEFINITIONS.len()) {
                             let k = &KEY_DEFINITIONS[i];
                             unscaled[k.index as usize] = *c;
@@ -394,7 +519,7 @@ pub fn handle_openrgb_client(
                         }
                     }
                     if is_canvas_mode {
-                        let mut dev = dev_control.lock().unwrap();
+                        let mut dev = safe_lock(&dev_control);
                         let _ = dev.apply_matrix_canvas(&scaled);
                     }
                 }
@@ -405,12 +530,12 @@ pub fn handle_openrgb_client(
                         let b_pct = openrgb_brightness.load(Ordering::SeqCst);
                         let is_canvas_mode = openrgb_mode.load(Ordering::SeqCst) == 16;
                         {
-                            let mut unscaled = cached_matrix.lock().unwrap();
+                            let mut unscaled = safe_lock(&cached_matrix);
                             unscaled[k.index as usize] = color;
                         }
                         if is_canvas_mode {
                             let scaled_color = scale_rgb(color, b_pct);
-                            let mut dev = dev_control.lock().unwrap();
+                            let mut dev = safe_lock(&dev_control);
                             let _ = dev.set_single_key(k.index, scaled_color);
                         }
                     }
@@ -420,14 +545,14 @@ pub fn handle_openrgb_client(
                 openrgb_mode.store(16, Ordering::SeqCst);
                 let b_pct = openrgb_brightness.load(Ordering::SeqCst);
                 let scaled = {
-                    let unscaled = cached_matrix.lock().unwrap();
+                    let unscaled = safe_lock(&cached_matrix);
                     let mut s = [RgbColor::new(0, 0, 0); SPARSE_KEY_COUNT];
                     for (idx, color) in unscaled.iter().enumerate() {
                         s[idx] = scale_rgb(*color, b_pct);
                     }
                     s
                 };
-                let mut dev = dev_control.lock().unwrap();
+                let mut dev = safe_lock(&dev_control);
                 let _ = dev.apply_matrix_canvas(&scaled);
             }
             NET_PACKET_ID_RGBCONTROLLER_SETMODE | NET_PACKET_ID_RGBCONTROLLER_SAVEMODE => {
@@ -440,17 +565,17 @@ pub fn handle_openrgb_client(
 
                     if mode == LightingMode::CustomMatrixCanvas {
                         let scaled = {
-                            let unscaled = cached_matrix.lock().unwrap();
+                            let unscaled = safe_lock(&cached_matrix);
                             let mut s = [RgbColor::new(0, 0, 0); SPARSE_KEY_COUNT];
                             for (idx, color) in unscaled.iter().enumerate() {
                                 s[idx] = scale_rgb(*color, b_pct);
                             }
                             s
                         };
-                        let mut dev = dev_control.lock().unwrap();
+                        let mut dev = safe_lock(&dev_control);
                         let _ = dev.apply_matrix_canvas(&scaled);
                     } else if mode == LightingMode::Off {
-                        let mut dev = dev_control.lock().unwrap();
+                        let mut dev = safe_lock(&dev_control);
                         let _ = dev.turn_off_lighting();
                     } else {
                         let hw_speed = if mode_info.speed <= 4 {
@@ -486,10 +611,10 @@ pub fn handle_openrgb_client(
                             color,
                         };
                         if mode == LightingMode::Static {
-                            let mut om = cached_matrix.lock().unwrap();
+                            let mut om = safe_lock(&cached_matrix);
                             *om = [color; SPARSE_KEY_COUNT];
                         }
-                        let mut dev = dev_control.lock().unwrap();
+                        let mut dev = safe_lock(&dev_control);
                         let _ = dev.apply_lighting_config(&hw_cfg);
                     }
                 }
@@ -533,8 +658,8 @@ pub(crate) fn dispatch_ipc_request(
     match req {
         IpcRequest::Ping => IpcResponse::Pong,
         IpcRequest::GetStatus => {
-            let cfg = config.lock().unwrap();
-            let fw_ver = dev_control.lock().unwrap().get_firmware_version().unwrap_or_default();
+            let cfg = safe_lock(config);
+            let fw_ver = safe_lock(dev_control).get_firmware_version().unwrap_or_default();
             let update_avail = check_firmware_update_available(&fw_ver);
             IpcResponse::Status(ServiceStatus {
                 service_running: true,
@@ -548,12 +673,26 @@ pub(crate) fn dispatch_ipc_request(
             })
         }
         IpcRequest::GetConfig => {
-            let cfg = config.lock().unwrap();
+            let cfg = safe_lock(config);
             IpcResponse::Config(cfg.clone())
+        }
+        IpcRequest::GetLightingConfig => {
+            let mut dev = safe_lock(dev_control);
+            match dev.get_lighting_config() {
+                Ok(cfg) => IpcResponse::LightingConfig(cfg),
+                Err(e) => IpcResponse::Error(e),
+            }
+        }
+        IpcRequest::GetDeviceInfo => {
+            let mut dev = safe_lock(dev_control);
+            match dev.get_device_info() {
+                Ok(info) => IpcResponse::DeviceInfo(info),
+                Err(e) => IpcResponse::Error(e),
+            }
         }
         IpcRequest::SaveConfig(new_cfg) => {
             let (old_openrgb, old_guard) = {
-                let cfg = config.lock().unwrap();
+                let cfg = safe_lock(config);
                 (cfg.openrgb_enabled, cfg.guard_volume_enabled)
             };
             let (new_openrgb, new_guard, host, port) = (
@@ -564,7 +703,7 @@ pub(crate) fn dispatch_ipc_request(
             );
             let _ = new_cfg.save();
             {
-                let mut cfg = config.lock().unwrap();
+                let mut cfg = safe_lock(config);
                 *cfg = new_cfg;
             }
             if new_openrgb != old_openrgb {
@@ -593,11 +732,11 @@ pub(crate) fn dispatch_ipc_request(
         IpcRequest::ApplyLightingProfile { id } => {
             if let Some(p) = profile_manager.load_lighting_profile(&id) {
                 openrgb_mode.store(p.mode as u8, Ordering::SeqCst);
-                let mut dev = dev_control.lock().unwrap();
+                let mut dev = safe_lock(dev_control);
                 let res = if p.mode == LightingMode::CustomMatrixCanvas {
                     let matrix = p.to_matrix();
                     {
-                        let mut om = openrgb_matrix.lock().unwrap();
+                        let mut om = safe_lock(openrgb_matrix);
                         *om = matrix;
                     }
                     let _ = dev.apply_lighting_config(&p.to_lighting_config());
@@ -608,7 +747,7 @@ pub(crate) fn dispatch_ipc_request(
                 };
                 match res {
                     Ok(()) => {
-                        let mut cfg = config.lock().unwrap();
+                        let mut cfg = safe_lock(config);
                         cfg.active_lighting_profile = id;
                         let _ = cfg.save();
                         IpcResponse::Ok
@@ -642,7 +781,7 @@ pub(crate) fn dispatch_ipc_request(
                 color_mode,
                 color: RgbColor::new(color[0], color[1], color[2]),
             };
-            let mut dev = dev_control.lock().unwrap();
+            let mut dev = safe_lock(dev_control);
             match dev.apply_lighting_config(&hw_cfg) {
                 Ok(()) => IpcResponse::Ok,
                 Err(e) => IpcResponse::Error(e),
@@ -660,10 +799,10 @@ pub(crate) fn dispatch_ipc_request(
                 color: RgbColor::new(r, g, b),
             };
             {
-                let mut om = openrgb_matrix.lock().unwrap();
+                let mut om = safe_lock(openrgb_matrix);
                 *om = [RgbColor::new(r, g, b); SPARSE_KEY_COUNT];
             }
-            let mut dev = dev_control.lock().unwrap();
+            let mut dev = safe_lock(dev_control);
             match dev.apply_lighting_config(&hw_cfg) {
                 Ok(()) => IpcResponse::Ok,
                 Err(e) => IpcResponse::Error(e),
@@ -672,10 +811,10 @@ pub(crate) fn dispatch_ipc_request(
         IpcRequest::SetKeyColor { key_index, r, g, b } => {
             openrgb_mode.store(LightingMode::CustomMatrixCanvas as u8, Ordering::SeqCst);
             if (key_index as usize) < SPARSE_KEY_COUNT {
-                let mut om = openrgb_matrix.lock().unwrap();
+                let mut om = safe_lock(openrgb_matrix);
                 om[key_index as usize] = RgbColor::new(r, g, b);
             }
-            let mut dev = dev_control.lock().unwrap();
+            let mut dev = safe_lock(dev_control);
             match dev.set_single_key(key_index, RgbColor::new(r, g, b)) {
                 Ok(()) => IpcResponse::Ok,
                 Err(e) => IpcResponse::Error(e),
@@ -688,10 +827,10 @@ pub(crate) fn dispatch_ipc_request(
                 matrix[i] = RgbColor::new(c[0], c[1], c[2]);
             }
             {
-                let mut om = openrgb_matrix.lock().unwrap();
+                let mut om = safe_lock(openrgb_matrix);
                 *om = matrix;
             }
-            let mut dev = dev_control.lock().unwrap();
+            let mut dev = safe_lock(dev_control);
             let canvas_cfg = LightingConfig {
                 zone: LightingZone::MainBacklight,
                 mode: LightingMode::CustomMatrixCanvas,
@@ -709,14 +848,14 @@ pub(crate) fn dispatch_ipc_request(
         }
         IpcRequest::LightingOff => {
             openrgb_mode.store(LightingMode::Off as u8, Ordering::SeqCst);
-            let mut dev = dev_control.lock().unwrap();
+            let mut dev = safe_lock(dev_control);
             match dev.turn_off_lighting() {
                 Ok(()) => IpcResponse::Ok,
                 Err(e) => IpcResponse::Error(e),
             }
         }
         IpcRequest::SwitchHardwareProfile(idx) => {
-            let mut dev = dev_control.lock().unwrap();
+            let mut dev = safe_lock(dev_control);
             match dev.switch_hw_profile(idx) {
                 Ok(()) => IpcResponse::Ok,
                 Err(e) => IpcResponse::Error(e),
@@ -725,10 +864,10 @@ pub(crate) fn dispatch_ipc_request(
         IpcRequest::ApplyButtonProfile { id } => {
             if let Some(bp) = profile_manager.load_button_profile(&id) {
                 if let (Ok(base_actions), Ok(fn_actions)) = (bp.base_layer.to_descriptors(), bp.fn_layer.to_descriptors()) {
-                    let mut dev = dev_control.lock().unwrap();
+                    let mut dev = safe_lock(dev_control);
                     let _ = dev.apply_keymap_layer(KeyLayer::Base, &base_actions);
                     let _ = dev.apply_keymap_layer(KeyLayer::Fn, &fn_actions);
-                    let mut cfg = config.lock().unwrap();
+                    let mut cfg = safe_lock(config);
                     cfg.active_button_profile = id;
                     let _ = cfg.save();
                     IpcResponse::Ok
@@ -756,10 +895,10 @@ pub(crate) fn dispatch_ipc_request(
                 if let Some(e) = err {
                     IpcResponse::Error(e)
                 } else {
-                    let mut dev = dev_control.lock().unwrap();
+                    let mut dev = safe_lock(dev_control);
                     match dev.apply_macro_memory(table.as_bytes()) {
                         Ok(()) => {
-                            let mut cfg = config.lock().unwrap();
+                            let mut cfg = safe_lock(config);
                             cfg.active_macro_profile = id;
                             let _ = cfg.save();
                             IpcResponse::Ok
@@ -773,10 +912,10 @@ pub(crate) fn dispatch_ipc_request(
         }
         IpcRequest::ApplySettingsProfile { id } => {
             if let Some(sp) = profile_manager.load_settings_profile(&id) {
-                let mut dev = dev_control.lock().unwrap();
+                let mut dev = safe_lock(dev_control);
                 match dev.set_sleep_timeout(sp.sleep_timeout_mins * 60) {
                     Ok(()) => {
-                        let mut cfg = config.lock().unwrap();
+                        let mut cfg = safe_lock(config);
                         cfg.active_settings_profile = id;
                         let _ = cfg.save();
                         IpcResponse::Ok
@@ -791,7 +930,7 @@ pub(crate) fn dispatch_ipc_request(
             if actions.len() == SPARSE_KEY_COUNT {
                 let mut arr = [fantastech_protocol::keymap::KeyAction::disabled(); SPARSE_KEY_COUNT];
                 arr.copy_from_slice(&actions);
-                let mut dev = dev_control.lock().unwrap();
+                let mut dev = safe_lock(dev_control);
                 match dev.apply_keymap_layer(layer, &arr) {
                     Ok(()) => IpcResponse::Ok,
                     Err(e) => IpcResponse::Error(e),
@@ -801,14 +940,14 @@ pub(crate) fn dispatch_ipc_request(
             }
         }
         IpcRequest::SetSleepTimeout(secs) => {
-            let mut dev = dev_control.lock().unwrap();
+            let mut dev = safe_lock(dev_control);
             match dev.set_sleep_timeout(secs) {
                 Ok(()) => IpcResponse::Ok,
                 Err(e) => IpcResponse::Error(e),
             }
         }
         IpcRequest::FactoryReset => {
-            let mut dev = dev_control.lock().unwrap();
+            let mut dev = safe_lock(dev_control);
             match dev.factory_reset() {
                 Ok(()) => IpcResponse::Ok,
                 Err(e) => IpcResponse::Error(e),
@@ -816,7 +955,7 @@ pub(crate) fn dispatch_ipc_request(
         }
         IpcRequest::SetOpenRgbEnabled(enabled) => {
             let (should_spawn, host, port) = {
-                let mut cfg = config.lock().unwrap();
+                let mut cfg = safe_lock(config);
                 cfg.openrgb_enabled = enabled;
                 let _ = cfg.save();
                 let was_running = openrgb_running.load(Ordering::SeqCst);
@@ -838,7 +977,7 @@ pub(crate) fn dispatch_ipc_request(
             IpcResponse::Ok
         }
         IpcRequest::SetVolumeGuardEnabled(enabled) => {
-            let mut cfg = config.lock().unwrap();
+            let mut cfg = safe_lock(config);
             cfg.guard_volume_enabled = enabled;
             let _ = cfg.save();
             let was_running = volume_guard_running.load(Ordering::SeqCst);
@@ -913,7 +1052,7 @@ pub fn run_service(
 
     // Check if another instance is already running
     if is_service_running() {
-        eprintln!("❌ Error: FantasTech background service is already running on {}", socket_path.display());
+        eprintln!("[ERROR] FantasTech background service is already running on {}.", socket_path.display());
         return Err("Service already active".into());
     }
 
@@ -923,10 +1062,15 @@ pub fn run_service(
     }
     if let Some(parent) = socket_path.parent() {
         fs::create_dir_all(parent)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
+        }
     }
 
     println!("============================================================");
-    println!("🌈 FantasTech Unified Keyboard Service Daemon");
+    println!("FantasTech Unified Keyboard Service Daemon");
     println!("   Target Hardware: Fantech MK894 Maxpower II (0x36AE:0xFE9C)");
     println!("   IPC Socket:      {}", socket_path.display());
     println!("============================================================");
@@ -937,39 +1081,21 @@ pub fn run_service(
 
     // Connect to hardware or emulator
     let dev_control: Arc<Mutex<Box<dyn DeviceControl>>> = if use_emulator {
-        println!("🎮 Using Virtual Keyboard Emulator.");
+        println!("[INFO] Using virtual keyboard emulator.");
         let emu = VirtualKeyboardEmulator::new();
         let dev = Device::new_read_only(emu).into_reversible();
         Arc::new(Mutex::new(Box::new(DeviceHolder::Reversible(dev))))
-    } else if let Some(path) = explicit_device {
-        println!("🔌 Opening explicit device node: {:?}", path);
-        let transport = HidrawTransport::open(path)?;
-        let dev = Device::new_read_only(transport).into_reversible();
-        Arc::new(Mutex::new(Box::new(DeviceHolder::Reversible(dev))))
     } else {
-        match HidrawTransport::discover() {
-            Ok(transport) => {
-                println!("🔌 Discovered physical Fantech MK894 on /dev/hidraw.");
-                let dev = Device::new_read_only(transport).into_reversible();
-                Arc::new(Mutex::new(Box::new(DeviceHolder::Reversible(dev))))
-            }
-            Err(e) => {
-                println!("⚠️  Physical MK894 not currently found: {}", e);
-                println!("   Falling back to Virtual Keyboard Emulator for offline coordination.");
-                let emu = VirtualKeyboardEmulator::new();
-                let dev = Device::new_read_only(emu).into_reversible();
-                Arc::new(Mutex::new(Box::new(DeviceHolder::Reversible(dev))))
-            }
-        }
+        Arc::new(Mutex::new(Box::new(DynamicHidDeviceControl::new(explicit_device))))
     };
 
     // Auto-apply active lighting profile if enabled and OpenRGB is off
     {
-        let cfg = config.lock().unwrap();
+        let cfg = safe_lock(&config);
         if cfg.auto_apply_lighting && !cfg.openrgb_enabled {
-            println!("💡 Auto-applying active lighting profile '{}'...", cfg.active_lighting_profile);
+            println!("[INFO] Auto-applying active lighting profile '{}'...", cfg.active_lighting_profile);
             if let Some(p) = profile_manager.load_lighting_profile(&cfg.active_lighting_profile) {
-                let mut dev = dev_control.lock().unwrap();
+                let mut dev = safe_lock(&dev_control);
                 if p.mode == LightingMode::CustomMatrixCanvas {
                     let matrix = p.to_matrix();
                     let _ = dev.apply_matrix_canvas(&matrix);
@@ -977,7 +1103,7 @@ pub fn run_service(
                     let hw_cfg = p.to_lighting_config();
                     let _ = dev.apply_lighting_config(&hw_cfg);
                 }
-                println!("✅ Applied lighting profile '{}'", p.name);
+                println!("[OK] Applied lighting profile '{}'.", p.name);
             }
         }
     }
@@ -989,7 +1115,7 @@ pub fn run_service(
     let openrgb_matrix = Arc::new(Mutex::new([RgbColor::new(0, 113, 207); SPARSE_KEY_COUNT]));
     let openrgb_brightness = Arc::new(AtomicU8::new(100));
     let initial_mode = {
-        let cfg = config.lock().unwrap();
+        let cfg = safe_lock(&config);
         if let Some(p) = profile_manager.load_lighting_profile(&cfg.active_lighting_profile) {
             p.mode as u8
         } else {
@@ -1000,10 +1126,10 @@ pub fn run_service(
 
     // Initialize matrix from active profile if applicable
     {
-        let cfg = config.lock().unwrap();
+        let cfg = safe_lock(&config);
         if let Some(p) = profile_manager.load_lighting_profile(&cfg.active_lighting_profile) {
             if p.mode == LightingMode::CustomMatrixCanvas {
-                let mut om = openrgb_matrix.lock().unwrap();
+                let mut om = safe_lock(&openrgb_matrix);
                 *om = p.to_matrix();
             }
         }
@@ -1012,7 +1138,7 @@ pub fn run_service(
     // Spawn OpenRGB thread if enabled
     let openrgb_running = Arc::new(AtomicBool::new(false));
     {
-        let cfg = config.lock().unwrap();
+        let cfg = safe_lock(&config);
         if cfg.openrgb_enabled {
             spawn_openrgb_server(
                 cfg.openrgb_host.clone(),
@@ -1030,7 +1156,7 @@ pub fn run_service(
     // Spawn Volume Guard thread if enabled
     let volume_guard_running = Arc::new(AtomicBool::new(false));
     {
-        let cfg = config.lock().unwrap();
+        let cfg = safe_lock(&config);
         if cfg.guard_volume_enabled {
             spawn_volume_guard(
                 Arc::clone(&running),
@@ -1042,7 +1168,7 @@ pub fn run_service(
     // Spawn System Tray applet if enabled
     let tray_child: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
     {
-        let cfg = config.lock().unwrap();
+        let cfg = safe_lock(&config);
         if cfg.tray_icon_enabled {
             spawn_tray_applet(Arc::clone(&tray_child));
         }
@@ -1052,7 +1178,7 @@ pub fn run_service(
     let socket_path = ipc_socket_path();
     if socket_path.exists() {
         if UnixStream::connect(&socket_path).is_ok() {
-            eprintln!("❌ FantasTech service is already running on {}", socket_path.display());
+            eprintln!("[ERROR] FantasTech service is already running on {}.", socket_path.display());
             return Err("Service already running".into());
         } else {
             // Orphaned socket from previous abnormal termination; safely remove it
@@ -1081,7 +1207,7 @@ pub fn run_service(
         }
     }
 
-    println!("🚀 FantasTech Service initialized and listening for IPC connections.");
+    println!("[OK] FantasTech service initialized and listening for IPC connections.");
 
     let mut last_tray_check = std::time::Instant::now();
 
@@ -1092,12 +1218,12 @@ pub fn run_service(
 
             // If running inside Flatpak sandbox, auto-terminate if Flatpak was uninstalled
             if std::env::var("FLATPAK_ID").is_ok() && !std::path::Path::new("/app/bin/fantastech").exists() {
-                eprintln!("🛑 Flatpak uninstalled. Exiting background service...");
+                eprintln!("[INFO] Flatpak uninstalled. Exiting background service...");
                 let _ = fs::remove_file(&socket_path);
                 std::process::exit(0);
             }
 
-            let cfg = config.lock().unwrap();
+            let cfg = safe_lock(&config);
             if cfg.tray_icon_enabled && !fantastech_core::is_tray_already_running() {
                 crate::tray::spawn_native_tray();
             }
@@ -1134,7 +1260,7 @@ pub fn run_service(
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
                     Err(e) => {
-                        eprintln!("⚠️ IPC accept error: {}", e);
+                        eprintln!("[WARN] IPC accept error: {}", e);
                     }
                 }
             }
@@ -1146,12 +1272,12 @@ pub fn run_service(
     }
 
     // Clean up on exit
-    println!("🛑 Shutting down FantasTech Service...");
-    if let Some(mut child) = tray_child.lock().unwrap().take() {
+    println!("[INFO] Shutting down FantasTech service...");
+    if let Some(mut child) = safe_lock(&tray_child).take() {
         let _ = child.kill();
     }
     let _ = fs::remove_file(&socket_path);
-    println!("👋 FantasTech Service cleanly stopped.");
+    println!("[OK] FantasTech service cleanly stopped.");
 
     Ok(())
 }
@@ -1198,11 +1324,11 @@ pub fn handle_service_command(cmd: &str) -> Result<(), Box<dyn std::error::Error
     match cmd {
         "start" => {
             if is_service_running() {
-                println!("✅ FantasTech background service is already running.");
+                println!("[OK] FantasTech background service is already running.");
                 return Ok(());
             }
 
-            println!("🚀 Starting FantasTech background service...");
+            println!("[INFO] Starting FantasTech background service...");
             #[cfg(target_os = "linux")]
             {
                 let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
@@ -1218,7 +1344,7 @@ pub fn handle_service_command(cmd: &str) -> Result<(), Box<dyn std::error::Error
                         if s.success() {
                             thread::sleep(Duration::from_millis(500));
                             if is_service_running() {
-                                println!("✅ FantasTech service successfully started via systemd.");
+                                println!("[OK] FantasTech service successfully started via systemd.");
                                 return Ok(());
                             }
                         }
@@ -1240,26 +1366,26 @@ pub fn handle_service_command(cmd: &str) -> Result<(), Box<dyn std::error::Error
             }
             match cmd.spawn() {
                 Ok(_) => {
-                    println!("⏳ Waiting for service socket initialization...");
+                    println!("[INFO] Waiting for service socket initialization...");
                     for _ in 0..20 {
                         thread::sleep(Duration::from_millis(100));
                         if is_service_running() {
-                            println!("✅ FantasTech service daemon successfully launched in background.");
+                            println!("[OK] FantasTech service daemon successfully launched in background.");
                             return Ok(());
                         }
                     }
-                    println!("⚠️ Service spawned but socket connection timed out.");
+                    println!("[WARN] Service spawned but socket connection timed out.");
                 }
-                Err(e) => eprintln!("❌ Failed to spawn background daemon: {}", e),
+                Err(e) => eprintln!("[ERROR] Failed to spawn background daemon: {}", e),
             }
         }
         "stop" => {
             if !is_service_running() {
-                println!("ℹ️ FantasTech background service is not running.");
+                println!("[INFO] FantasTech background service is not running.");
                 return Ok(());
             }
 
-            println!("🛑 Stopping FantasTech service...");
+            println!("[INFO] Stopping FantasTech service...");
             let _ = send_ipc_request(&IpcRequest::ShutdownService);
             #[cfg(target_os = "linux")]
             {
@@ -1276,11 +1402,11 @@ pub fn handle_service_command(cmd: &str) -> Result<(), Box<dyn std::error::Error
             for _ in 0..10 {
                 thread::sleep(Duration::from_millis(100));
                 if !is_service_running() {
-                    println!("✅ FantasTech service successfully stopped.");
+                    println!("[OK] FantasTech service successfully stopped.");
                     return Ok(());
                 }
             }
-            println!("✅ Stop signal transmitted.");
+            println!("[OK] Stop signal transmitted.");
         }
         "restart" => {
             let _ = handle_service_command("stop");
@@ -1315,13 +1441,13 @@ pub fn handle_service_command(cmd: &str) -> Result<(), Box<dyn std::error::Error
             #[cfg(target_os = "linux")]
             install_systemd_user_service()?;
             #[cfg(not(target_os = "linux"))]
-            println!("ℹ️ Service install is managed automatically via your platform installer.");
+            println!("[INFO] Service install is managed automatically via your platform installer.");
         }
         "uninstall" => {
             #[cfg(target_os = "linux")]
             uninstall_systemd_user_service()?;
             #[cfg(not(target_os = "linux"))]
-            println!("ℹ️ Service uninstall is managed automatically via your platform uninstaller.");
+            println!("[INFO] Service uninstall is managed automatically via your platform uninstaller.");
         }
         other => {
             eprintln!("Unknown service subcommand '{}'. Options: run, start, stop, restart, status, install, uninstall", other);
@@ -1353,7 +1479,7 @@ WantedBy=default.target
     let unit_path = unit_dir.join("fantastech.service");
     fs::write(&unit_path, service_content)?;
 
-    println!("📄 Generated systemd user unit at {:?}", unit_path);
+    println!("[INFO] Generated systemd user unit at {:?}", unit_path);
 
     let _ = Command::new("systemctl").args(["--user", "daemon-reload"]).status();
     let status = Command::new("systemctl")
@@ -1362,12 +1488,12 @@ WantedBy=default.target
 
     if let Ok(s) = status {
         if s.success() {
-            println!("✅ Successfully enabled and started fantastech.service via systemd!");
+            println!("[OK] Successfully enabled and started fantastech.service via systemd.");
             return Ok(());
         }
     }
 
-    println!("💡 Service file written. Run: systemctl --user enable --now fantastech.service");
+    println!("[INFO] Service file written. Run: systemctl --user enable --now fantastech.service");
     Ok(())
 }
 
@@ -1380,10 +1506,10 @@ fn uninstall_systemd_user_service() -> Result<(), Box<dyn std::error::Error>> {
     let unit_path = PathBuf::from(home).join(".config/systemd/user/fantastech.service");
     if unit_path.exists() {
         fs::remove_file(&unit_path)?;
-        println!("🗑️  Removed systemd unit {:?}", unit_path);
+        println!("[OK] Removed systemd unit {:?}", unit_path);
     }
     let _ = Command::new("systemctl").args(["--user", "daemon-reload"]).status();
-    println!("✅ fantastech.service uninstalled from systemd.");
+    println!("[OK] fantastech.service uninstalled from systemd.");
     Ok(())
 }
 
@@ -1399,6 +1525,23 @@ mod tests {
     }
 
     impl DeviceControl for MockDeviceControl {
+        fn get_device_info(&mut self) -> Result<DeviceInfo, String> {
+            Ok(DeviceInfo {
+                profile_name: "Mock Device".into(),
+                firmware_version: "V101".into(),
+                active_profile: 0,
+                profile_count: 1,
+                pid: 0xFE9C,
+                battery: 100,
+                charge: 1,
+                serial_number: "MOCK123".into(),
+            })
+        }
+
+        fn get_lighting_config(&mut self) -> Result<LightingConfig, String> {
+            Ok(self.last_lighting_config.lock().unwrap().unwrap_or_default())
+        }
+
         fn apply_lighting_config(&mut self, config: &LightingConfig) -> Result<(), String> {
             *self.last_lighting_config.lock().unwrap() = Some(*config);
             Ok(())
@@ -1695,8 +1838,7 @@ mod tests {
         assert_eq!(openrgb_mode.load(Ordering::SeqCst), LightingMode::Bloom as u8);
 
         // 2. OpenRGB immediately follows SetMode with UpdateLEDs containing the controller colors array.
-        // In the bug, this unconditionally called apply_matrix_canvas, overwriting Bloom with random matrix colors!
-        // With our fix, since openrgb_mode is Bloom (6 != 16), apply_matrix_canvas must NOT be called.
+        // For hardware preset modes (modes 0..15), OpenRGB LED updates must not stream custom matrix colors.
         let mut leds_pkt = Vec::new();
         leds_pkt.extend_from_slice(&0u32.to_le_bytes()); // data_size placeholder
         leds_pkt.extend_from_slice(&(KEY_DEFINITIONS.len() as u16).to_le_bytes());
@@ -1788,11 +1930,11 @@ mod windows_service {
 
     pub fn run_service(
         use_emulator: bool,
-        _explicit_device: Option<PathBuf>,
+        explicit_device: Option<PathBuf>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let port = WINDOWS_IPC_PORT;
         if is_service_running() {
-            eprintln!("❌ Error: FantasTech background service is already running on 127.0.0.1:{}", port);
+            eprintln!("[ERROR] FantasTech background service is already running on 127.0.0.1:{}", port);
             return Err("Service already active".into());
         }
 
@@ -1800,7 +1942,7 @@ mod windows_service {
         listener.set_nonblocking(true)?;
 
         println!("============================================================");
-        println!("🌈 FantasTech Unified Keyboard Service Daemon (Windows)");
+        println!("FantasTech Unified Keyboard Service Daemon (Windows)");
         println!("   Target Hardware: Fantech MK894 Maxpower II (0x36AE:0xFE9C)");
         println!("   IPC Endpoint:    127.0.0.1:{}", port);
         println!("============================================================");
@@ -1811,24 +1953,12 @@ mod windows_service {
 
         // Connect to hardware or emulator
         let dev_control: Arc<Mutex<Box<dyn DeviceControl>>> = if use_emulator {
-            println!("🎮 Using Virtual Keyboard Emulator.");
+            println!("[INFO] Using virtual keyboard emulator.");
             let emu = VirtualKeyboardEmulator::new();
             let dev = Device::new_read_only(emu).into_reversible();
             Arc::new(Mutex::new(Box::new(DeviceHolder::Reversible(dev))))
         } else {
-            match HidrawTransport::discover() {
-                Ok(t) => {
-                    println!("🔌 Connected to MK894 hardware transport.");
-                    let dev = Device::new_read_only(t).into_reversible();
-                    Arc::new(Mutex::new(Box::new(DeviceHolder::Reversible(dev))))
-                }
-                Err(e) => {
-                    eprintln!("⚠️ Could not open physical keyboard: {}. Running in simulated emulator mode.", e);
-                    let emu = VirtualKeyboardEmulator::new();
-                    let dev = Device::new_read_only(emu).into_reversible();
-                    Arc::new(Mutex::new(Box::new(DeviceHolder::Reversible(dev))))
-                }
-            }
+            Arc::new(Mutex::new(Box::new(DynamicHidDeviceControl::new(explicit_device))))
         };
 
         let running = Arc::new(AtomicBool::new(true));
@@ -1872,7 +2002,7 @@ mod windows_service {
             }
         }
 
-        println!("🚀 FantasTech Service initialized and listening for IPC connections.");
+        println!("[OK] FantasTech service initialized and listening for IPC connections.");
 
         let mut last_tray_check = std::time::Instant::now();
         while running.load(Ordering::SeqCst) {
@@ -1916,7 +2046,7 @@ mod windows_service {
                         }
                         Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
                         Err(e) => {
-                            eprintln!("⚠️ IPC accept error: {}", e);
+                            eprintln!("[WARN] IPC accept error: {}", e);
                         }
                     }
                 }
@@ -1925,8 +2055,8 @@ mod windows_service {
             }
         }
 
-        println!("🛑 Shutting down FantasTech Service...");
-        println!("👋 FantasTech Service cleanly stopped.");
+        println!("[INFO] Shutting down FantasTech service...");
+        println!("[OK] FantasTech service cleanly stopped.");
         Ok(())
     }
 
@@ -1934,10 +2064,10 @@ mod windows_service {
         match cmd {
             "start" => {
                 if is_service_running() {
-                    println!("✅ FantasTech background service is already running on Windows.");
+                    println!("[OK] FantasTech background service is already running on Windows.");
                     return Ok(());
                 }
-                println!("🚀 Starting FantasTech background service on Windows...");
+                println!("[INFO] Starting FantasTech background service on Windows...");
                 let bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("fantastech.exe"));
                 let mut cmd = Command::new(bin);
                 cmd.args(["service", "run"]);
@@ -1954,34 +2084,34 @@ mod windows_service {
                 }
                 match cmd.spawn() {
                     Ok(_) => {
-                        println!("⏳ Waiting for service initialization on 127.0.0.1:{}...", WINDOWS_IPC_PORT);
+                        println!("[INFO] Waiting for service initialization on 127.0.0.1:{}...", WINDOWS_IPC_PORT);
                         for _ in 0..20 {
                             thread::sleep(Duration::from_millis(100));
                             if is_service_running() {
-                                println!("✅ FantasTech service daemon successfully launched in background.");
+                                println!("[OK] FantasTech service daemon successfully launched in background.");
                                 return Ok(());
                             }
                         }
-                        println!("⚠️ Service spawned but connection timed out.");
+                        println!("[WARN] Service spawned but connection timed out.");
                     }
-                    Err(e) => eprintln!("❌ Failed to spawn background daemon: {}", e),
+                    Err(e) => eprintln!("[ERROR] Failed to spawn background daemon: {}", e),
                 }
             }
             "stop" => {
                 if !is_service_running() {
-                    println!("ℹ️ FantasTech background service is not running.");
+                    println!("[INFO] FantasTech background service is not running.");
                     return Ok(());
                 }
-                println!("🛑 Stopping FantasTech service...");
+                println!("[INFO] Stopping FantasTech service...");
                 let _ = send_ipc_request(&IpcRequest::ShutdownService);
                 for _ in 0..10 {
                     thread::sleep(Duration::from_millis(100));
                     if !is_service_running() {
-                        println!("✅ FantasTech service successfully stopped.");
+                        println!("[OK] FantasTech service successfully stopped.");
                         return Ok(());
                     }
                 }
-                println!("✅ Stop signal transmitted.");
+                println!("[OK] Stop signal transmitted.");
             }
             "restart" => {
                 let _ = handle_service_command("stop");
@@ -2028,11 +2158,11 @@ mod windows_service {
                 let cmd_file = startup_dir.join("FantasTech-Service.cmd");
                 let content = format!("@echo off\r\nstart \"\" \"{}\" service run\r\n", bin.display());
                 std::fs::write(&cmd_file, content)?;
-                println!("✅ Registered FantasTech service for automatic user login (Startup: {}).", cmd_file.display());
+                println!("[OK] Registered FantasTech service for automatic user login (Startup: {}).", cmd_file.display());
                 return Ok(());
             }
         }
-        println!("ℹ️ Automatic start can also be enabled during installation via the Inno Setup installer.");
+        println!("[INFO] Automatic start can also be enabled during installation via the Inno Setup installer.");
         Ok(())
     }
 
@@ -2044,7 +2174,7 @@ mod windows_service {
             let _ = std::fs::remove_file(startup_dir.join("FantasTech-Service.cmd"));
             let _ = std::fs::remove_file(startup_dir.join("FantasTech Service.cmd"));
         }
-        println!("✅ FantasTech service unregistered from Windows Startup.");
+        println!("[OK] FantasTech service unregistered from Windows Startup.");
         Ok(())
     }
 
@@ -2086,12 +2216,12 @@ pub use windows_service::*;
 
 #[cfg(all(not(unix), not(target_os = "windows")))]
 pub fn run_service(_emulator: bool, _device: Option<std::path::PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
-    eprintln!("ℹ️ The background service daemon is supported on Linux and Windows.");
+    eprintln!("[INFO] The background service daemon is supported on Linux and Windows.");
     Ok(())
 }
 
 #[cfg(all(not(unix), not(target_os = "windows")))]
 pub fn handle_service_command(_action: &str) -> Result<(), Box<dyn std::error::Error>> {
-    eprintln!("ℹ️ The background service daemon is supported on Linux and Windows.");
+    eprintln!("[INFO] The background service daemon is supported on Linux and Windows.");
     Ok(())
 }

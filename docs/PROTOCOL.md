@@ -1,7 +1,7 @@
 # Fantech MK894 Maxpower II USB HID Protocol Specification
 
 **Document Version:** 1.0.0  
-**Author:** Reverse-Engineering Research Team  
+**Author:** Ahmad Serieh  
 **Date:** 2026-10-26  
 **Target Hardware:** Fantech MK894 Maxpower II Mechanical Keyboard (and compatible Artery Tek / SinoWealth OEM platforms)  
 **Research Classification:** Clean-Room Protocol Interoperability Specification  
@@ -91,12 +91,12 @@ Configures global backlighting modes, brightness, animation speed, direction, an
 | `0x02` | Sub-length | uint8 | `0x0B` | 11 bytes of configuration parameters |
 | `0x03` | Reserved | uint8 | `0x00` | Reserved |
 | `0x04` | Reserved | uint8 | `0x00` | Reserved |
-| `0x05` | Light Zone | uint8 | `0x00` - `0x01` | `0` = Main Key Backlight; `1` = Side Accent Strips |
+| `0x05` | Light Zone | uint8 | `0x01` - `0x02` | `0x01` = Main Key Backlight; `0x02` = Side Accent Strips |
 | `0x06` | Reserved | uint8 | `0x00` | Padding |
 | `0x07` | Mode | uint8 | `0` - `16` | Animation mode preset (see table below) |
 | `0x08` | Brightness | uint8 | `0` - `100` | LED intensity percentage (0 = Off, 100 = Max) |
 | `0x09` | Speed | uint8 | `0` - `100` | Animation velocity percentage |
-| `0x0A` | Direction | uint8 | `0` - `2` | `0` = Normal, `1` = Left-to-Right, `2` = Up-to-Down |
+| `0x0A` | Direction | uint8 | `0` - `2` | Direction byte (ignored by MK894 MCU; hardware uses fixed animation flow) |
 | `0x0B` | Color Mode | uint8 | `0` - `1` | `0` = Multicolor/Spectrum, `1` = Custom Fixed Color |
 | `0x0C` | Reserved | uint8 | `0x00` | Padding |
 | `0x0D` | Hue (H) | uint8 | `0` - `255` | Scaled Hue (Maps: `0..360°` -> `0..255`) |
@@ -270,6 +270,16 @@ Hardware matrix addressing uses a 6-row by 21-column sparse grid (126 addressabl
 *Total physical switches*: **104 switches**.
 *Total sparse matrix slots*: **126 slots**. Unpopulated slots must be explicitly zeroed to prevent lingering firmware latches.
 
+### 5.1 Lock Indicator LEDs (Num, Caps, Win, Scroll Lock)
+* **Physical Diodes:** Dedicated single-color (monochrome white) LEDs. They are not RGB diodes and physically cannot change color.
+* **Control Mechanism:** Driven directly by MCU GPIO lines tied to standard OS USB HID keyboard output reports (`0x00`).
+* **Customizability:** Hardware lacks PWM brightness registers or firmware animation routines for these pins. They strictly function as binary ON/OFF indicator lights reflecting system lock state.
+
+### 5.2 Side Chassis Underglow RGB Strips
+* **Hardware Circuit:** The MK894 includes RGB diffusers along the left and right chassis edges.
+* **Matrix Mapping:** These LEDs are not mapped to the 104-key switch matrix canvas (slots 0..125) and cannot be addressed individually by software.
+* **Control Mechanism:** Operated via keyboard physical shortcuts (`Fn + Pause` to toggle through preset modes and OFF; `Fn + Scroll Lock` for color/speed).
+
 ---
 
 ## 6. Linux Integration: `udev` Permissions
@@ -292,10 +302,10 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 
 ## 7. Python Implementation Reference
 
-The accompanying clean-room Python driver is located in:
-* Core Protocol Encoder/Decoder: [`protocol.py`](file:///C:/Users/user/AppData/Local/Programs/MK894/re-workspace/driver/protocol.py)
-* CLI Control Script: [`mk894_control.py`](file:///C:/Users/user/AppData/Local/Programs/MK894/re-workspace/driver/mk894_control.py)
-* Test Suite: [`test_protocol.py`](file:///C:/Users/user/AppData/Local/Programs/MK894/re-workspace/tests/test_protocol.py)
+The reference protocol implementations are provided in:
+* Rust Core Protocol: [`core/crates/fantastech-protocol/src/lib.rs`](../core/crates/fantastech-protocol/src/lib.rs)
+* Hardware Device Control: [`core/crates/fantastech-device/src/lib.rs`](../core/crates/fantastech-device/src/lib.rs)
+* CLI Control Suite: [`core/crates/fantastech-cli/src/main.rs`](../core/crates/fantastech-cli/src/main.rs)
 
 ### Example: Setting Static Purple Color (Clean Python)
 ```python

@@ -6,8 +6,9 @@
 #![forbid(unsafe_code)]
 
 use crate::config::{get_fantastech_config_dir, FantasTechConfig};
+use fantastech_protocol::commands::DeviceInfo;
 use fantastech_protocol::keymap::{KeyAction, KeyLayer};
-use fantastech_protocol::lighting::{ColorMode, LightingMode};
+use fantastech_protocol::lighting::{ColorMode, LightingConfig, LightingMode};
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
 #[cfg(unix)]
@@ -29,6 +30,10 @@ pub enum IpcRequest {
     GetStatus,
     /// Retrieve active global configuration.
     GetConfig,
+    /// Query active hardware lighting configuration.
+    GetLightingConfig,
+    /// Query active hardware device identification and profile.
+    GetDeviceInfo,
     /// Update global configuration.
     SaveConfig(FantasTechConfig),
     /// Apply a saved lighting profile by identifier.
@@ -96,6 +101,8 @@ pub enum IpcResponse {
     Pong,
     Status(ServiceStatus),
     Config(FantasTechConfig),
+    LightingConfig(LightingConfig),
+    DeviceInfo(DeviceInfo),
     Error(String),
 }
 
@@ -238,7 +245,7 @@ mod tests {
             pid: 1234,
             firmware_update_available: false,
         };
-        let resp = IpcResponse::Status(status.clone());
+        let resp = IpcResponse::Status(status);
         let json_resp = serde_json::to_string(&resp).unwrap();
         let parsed_resp: IpcResponse = serde_json::from_str(&json_resp).unwrap();
         assert_eq!(resp, parsed_resp);

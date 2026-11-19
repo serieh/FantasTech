@@ -1,6 +1,7 @@
 # Fantech MK894 Companion Software Architecture & Complete Reverse-Engineering Report
 
 **Document Version:** 1.0.0  
+**Author:** Ahmad Serieh  
 **Date:** 2026-10-26  
 **Target:** Official Companion Software `MK894 Setup 1.0.1.exe` / Installed Bundle `MK894.exe` (resources/`app.asar`)  
 **Hardware Platform:** Fantech MK894 Maxpower II Mechanical Keyboard (Artery Tek AT32F405 ARM Cortex-M)  
@@ -218,18 +219,18 @@ All devices share the identical 65-byte USB Output Report framing and WebHID opc
 
 ## 5. Clean-Room Alternative Verification
 
-Every single operational capability provided by the vendor companion app has been independently reverse-engineered and cleanly implemented in our standalone Python suite without third-party dependencies:
+Every single operational capability provided by the vendor companion app has been independently reverse-engineered and cleanly implemented in our native standalone Rust suite without proprietary vendor dependencies:
 
 | Vendor Feature | Reverse-Engineered Mechanism | Clean-Room Driver Implementation |
 | :--- | :--- | :--- |
-| **Device Identification** | W3C WebHID enumerator | [`mk894_control.py --info`](file:///C:/Users/user/AppData/Local/Programs/MK894/re-workspace/driver/mk894_control.py) |
-| **Lighting Effects (17 Modes)**| Opcode `0x0B` Output Report | [`mk894_control.py --set-mode`](file:///C:/Users/user/AppData/Local/Programs/MK894/re-workspace/driver/mk894_control.py) |
-| **Custom RGB Matrix Canvas** | Opcode `0x12` multi-packet stream | [`mk894_control.py --preset / --load-colors`](file:///C:/Users/user/AppData/Local/Programs/MK894/re-workspace/driver/mk894_control.py) |
-| **Per-Key Single LED** | Opcode `0x14` 3-byte payload | [`mk894_control.py --set-key`](file:///C:/Users/user/AppData/Local/Programs/MK894/re-workspace/driver/mk894_control.py) |
-| **Physical Keymap Table** | Webpack chunk `2517` | [`keymap.py`](file:///C:/Users/user/AppData/Local/Programs/MK894/re-workspace/driver/keymap.py) & `--dump-keys` |
-| **Key Remapping & Disabling** | Opcode `0x10` 4-byte offset | [`mk894_control.py --remap-key / --disable-key`](file:///C:/Users/user/AppData/Local/Programs/MK894/re-workspace/driver/mk894_control.py) |
-| **Onboard Macro Memory** | 4096-byte pointer/action buffer | [`protocol.build_macro_buffer()`](file:///C:/Users/user/AppData/Local/Programs/MK894/re-workspace/driver/protocol.py) |
-| **Profile Switching** | Opcode `0xFB` | [`mk894_control.py --profile`](file:///C:/Users/user/AppData/Local/Programs/MK894/re-workspace/driver/mk894_control.py) |
-| **Auto-Sleep Configuration** | Opcode `0xFC` | [`mk894_control.py --sleep`](file:///C:/Users/user/AppData/Local/Programs/MK894/re-workspace/driver/mk894_control.py) |
-| **Factory Reset** | Opcode `0x0F` | [`mk894_control.py --factory-reset --confirm`](file:///C:/Users/user/AppData/Local/Programs/MK894/re-workspace/driver/mk894_control.py) |
-| **Safety Interceptor** | Banned Opcode `0x5A` | `protocol.BANNED_OPCODES` (`PermissionError`) |
+| **Device Identification** | W3C WebHID enumerator | `fantastech info` |
+| **Lighting Effects (17 Modes)**| Opcode `0x0B` Output Report | `fantastech light mode <ID>` |
+| **Custom RGB Matrix Canvas** | Opcode `0x14` sequenced matrix stream | `fantastech light matrix ...` / GUI Canvas |
+| **Per-Key Single LED** | Opcode `0x14` 3-byte payload | `fantastech light set-key <INDEX> <R> <G> <B>` |
+| **Physical Keymap Table** | Webpack chunk `2517` | `fantastech remap list` |
+| **Key Remapping & Disabling** | Opcode `0x10` 4-byte offset | `fantastech remap set <SRC> <DST>` |
+| **Onboard Macro Memory** | 4096-byte pointer/action buffer | `fantastech macro apply <FILE>` |
+| **Profile Switching** | Opcode `0xFB` | `fantastech profile apply <DOMAIN> <ID>` |
+| **Auto-Sleep Configuration** | Opcode `0xFC` | `fantastech setting sleep <MINUTES>` |
+| **Factory Reset** | Opcode `0x0F` | `fantastech setting factory-reset --confirm` |
+| **Safety Interceptor** | Banned Opcode `0x5A` | `fantastech_protocol::constants::BANNED_OPCODES` |

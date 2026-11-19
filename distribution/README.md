@@ -6,7 +6,7 @@ In accordance with distribution standards, the core application payload is a **s
 
 ---
 
-## 🐧 Linux — Flatpak (Only)
+## Linux — Flatpak (Only)
 
 Linux distribution is provided exclusively as a sandboxed Flatpak package (`org.fantastech.FantasTech`):
 
@@ -15,7 +15,7 @@ Linux distribution is provided exclusively as a sandboxed Flatpak package (`org.
 ./distribution/flatpak/build-flatpak.sh
 
 # Install Flatpak bundle locally
-flatpak install --user -y dist/FantasTech-0.1.0.flatpak
+flatpak install --user -y dist/FantasTech-0.1.5.flatpak
 
 # Run application
 flatpak run org.fantastech.FantasTech
@@ -31,9 +31,9 @@ The manifest includes:
 
 ---
 
-## 🪟 Windows — Inno Setup Installer (.exe)
+## Windows — Inno Setup Installer (.exe)
 
-Produces a standard Windows installer `.exe` (`FantasTech-Setup-0.1.0.exe`):
+Produces a standard Windows installer `.exe` (`FantasTech-Setup-0.1.5.exe`):
 - Installs to `%ProgramFiles%\FantasTech` or `%LocalAppData%\Programs\FantasTech`.
 - Creates Start Menu entries and desktop shortcuts.
 - Registers in Windows Settings (`Apps -> Installed apps` / Add or Remove Programs).

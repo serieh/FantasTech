@@ -2,8 +2,8 @@
 ; Creates a standard Windows installer (.exe) for 64-bit Windows
 
 #define MyAppName "FantasTech"
-#define MyAppVersion "0.1.0"
-#define MyAppPublisher "FantasTech Contributors"
+#define MyAppVersion "0.1.5"
+#define MyAppPublisher "Ahmad Serieh"
 #define MyAppExeName "fantastech.exe"
 
 [Setup]

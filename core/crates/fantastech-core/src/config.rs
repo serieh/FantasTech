@@ -164,7 +164,7 @@ impl FantasTechConfig {
                 Err(err) => {
                     let bak_path = path.with_extension("corrupt.bak");
                     let _ = fs::copy(path, &bak_path);
-                    eprintln!("⚠️ Corrupted config detected at {}: {}. Backed up to {} and restored defaults.", path.display(), err, bak_path.display());
+                    eprintln!("[WARN] Corrupted config detected at {}: {}. Backed up to {} and restored defaults.", path.display(), err, bak_path.display());
                 }
             }
         }

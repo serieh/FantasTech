@@ -428,6 +428,30 @@ pub fn build_light_query_report() -> Result<ReportBuffer, ProtocolError> {
     Ok(ReportBuffer::new(opcodes::GET_LIGHT_CONFIG))
 }
 
+/// Internal helper to extract color mode and RGB color from hardware lighting reports.
+fn extract_lighting_color_parameters(mode: LightingMode, raw: &[u8]) -> (ColorMode, RgbColor) {
+    let payload_len = raw[2];
+    let (cm, h, s, v) = if payload_len == 0x0A || raw[11] == 0xFF {
+        // Fixed color payload (10-byte subpayload: raw[5..15])
+        // raw[11] = 0xFF (Fixed color flag)
+        // raw[12] = H, raw[13] = S, raw[14] = V
+        (ColorMode::FixedColor, raw[12], raw[13], raw[14])
+    } else {
+        // Dynamic / multi-color or 11-byte payload (raw[5..16])
+        // raw[11] = color mode flag (0 or 1 where 0 = spectrum)
+        // raw[12] = singleColorIndex (e.g. 0x08 for dynamic, 0xFF for fixed)
+        // raw[13] = H, raw[14] = S, raw[15] = V
+        let is_dynamic = !mode.supports_color() || raw[11] == 0 || raw[12] == 0x08;
+        let cm = if is_dynamic {
+            ColorMode::DynamicSpectrum
+        } else {
+            ColorMode::FixedColor
+        };
+        (cm, raw[13], raw[14], raw[15])
+    };
+    (cm, hsv_to_rgb(h, s, v))
+}
+
 /// Parses a 64-byte response from the keyboard to a lighting query.
 pub fn parse_light_config_response(buf: &ReportBuffer) -> Result<LightingConfig, ProtocolError> {
     let raw = buf.as_bytes();
@@ -449,16 +473,7 @@ pub fn parse_light_config_response(buf: &ReportBuffer) -> Result<LightingConfig,
         1 => AnimationDirection::LeftToRight,
         _ => AnimationDirection::Default,
     };
-    let color_mode = if raw[11] == 1 {
-        ColorMode::FixedColor
-    } else {
-        ColorMode::DynamicSpectrum
-    };
-
-    let h = raw[13];
-    let s = raw[14];
-    let v = raw[15];
-    let color = hsv_to_rgb(h, s, v);
+    let (color_mode, color) = extract_lighting_color_parameters(mode, raw);
 
     Ok(LightingConfig {
         zone,
@@ -509,16 +524,7 @@ pub fn parse_effect_default_response(buf: &ReportBuffer) -> Result<LightingConfi
         1 => AnimationDirection::LeftToRight,
         _ => AnimationDirection::Default,
     };
-    let color_mode = if raw[11] == 1 {
-        ColorMode::FixedColor
-    } else {
-        ColorMode::DynamicSpectrum
-    };
-
-    let h = raw[13];
-    let s = raw[14];
-    let v = raw[15];
-    let color = hsv_to_rgb(h, s, v);
+    let (color_mode, color) = extract_lighting_color_parameters(mode, raw);
 
     Ok(LightingConfig {
         zone,
@@ -556,16 +562,7 @@ pub fn parse_async_lighting_notification(raw: &[u8]) -> Result<Option<LightingCo
         1 => AnimationDirection::LeftToRight,
         _ => AnimationDirection::Default,
     };
-    let color_mode = if raw[11] == 1 {
-        ColorMode::FixedColor
-    } else {
-        ColorMode::DynamicSpectrum
-    };
-
-    let h = raw[13];
-    let s = raw[14];
-    let v = raw[15];
-    let color = hsv_to_rgb(h, s, v);
+    let (color_mode, color) = extract_lighting_color_parameters(mode, raw);
 
     Ok(Some(LightingConfig {
         zone,

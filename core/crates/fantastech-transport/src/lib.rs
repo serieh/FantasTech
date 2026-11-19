@@ -235,12 +235,12 @@ impl Transport for HidrawTransport {
         }
 
         let n = self.file.read(buf).map_err(TransportError::Io)?;
-        tracing::debug!("📥 [HID RX] ({} bytes): {:02X?}", n, &buf[..n.min(16)]);
+        tracing::debug!("[HID RX] ({} bytes): {:02X?}", n, &buf[..n.min(16)]);
         Ok(n)
     }
 
     fn write_report(&mut self, buf: &[u8; REPORT_LENGTH]) -> Result<(), TransportError> {
-        tracing::debug!("📤 [HID TX] ({} bytes): {:02X?}", buf.len(), &buf[..16]);
+        tracing::debug!("[HID TX] ({} bytes): {:02X?}", buf.len(), &buf[..16]);
         self.drain();
         self.file.write_all(buf).map_err(TransportError::Io)?;
         self.file.flush().map_err(TransportError::Io)?;

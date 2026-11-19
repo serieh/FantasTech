@@ -279,7 +279,7 @@ pub fn run_volume_guard_service(
     service_running: Arc<AtomicBool>,
     guard_active_flag: Arc<AtomicBool>,
 ) {
-    println!("🛡️  Volume Guard service loop starting...");
+    println!("[INFO] Volume Guard service loop starting...");
     guard_active_flag.store(true, Ordering::SeqCst);
 
     while service_running.load(Ordering::SeqCst) && guard_active_flag.load(Ordering::SeqCst) {
@@ -322,7 +322,7 @@ pub fn run_volume_guard_service(
             continue;
         }
 
-        println!("🛡️  Volume Guard successfully acquired grab on {:?} with virtual /dev/uinput.", dev_node);
+        println!("[OK] Volume Guard successfully acquired grab on {:?} with virtual /dev/uinput.", dev_node);
         let _session = VolumeGuardSession { src_fd, uinput_fd };
         let mut reader = std::io::BufReader::new(src_file);
         let mut writer = uinput_file;
@@ -385,7 +385,7 @@ pub fn run_volume_guard_service(
     }
 
     guard_active_flag.store(false, Ordering::SeqCst);
-    println!("🛡️  Volume Guard stopped.");
+    println!("[INFO] Volume Guard stopped.");
 }
 
 /// Standalone CLI command handler for `fantastech guard-volume`.
@@ -396,8 +396,8 @@ pub fn handle_guard_volume(args: &crate::GuardVolumeArgs) -> Result<(), Box<dyn 
         match find_media_event_node() {
             Some(p) => p,
             None => {
-                eprintln!("❌ No Fantech MK894 media keyboard event node found in /dev/input/by-id/ or /dev/input/event*.");
-                eprintln!("💡 You can specify the exact event device node with: --device /dev/input/eventX");
+                eprintln!("[ERROR] No Fantech MK894 media keyboard event node found in /dev/input/by-id/ or /dev/input/event*.");
+                eprintln!("[INFO] You can specify the exact event device node with: --device /dev/input/eventX");
                 return Err("Fantech media event node not found".into());
             }
         }
@@ -407,7 +407,7 @@ pub fn handle_guard_volume(args: &crate::GuardVolumeArgs) -> Result<(), Box<dyn 
         tracing::info!("Initializing Fantech MK894 Hardware Volume Knob Guard (daemon mode)");
         tracing::info!("Target input node: {:?}", dev_node);
     } else {
-        println!("🛡️  Initializing Fantech MK894 Hardware Volume Knob Guard");
+        println!("[INFO] Initializing Fantech MK894 Hardware Volume Knob Guard");
         println!("   Target input node: {:?}", dev_node);
     }
 
@@ -417,22 +417,22 @@ pub fn handle_guard_volume(args: &crate::GuardVolumeArgs) -> Result<(), Box<dyn 
         .open(&dev_node)
         .inspect_err(|e| {
             if e.kind() == std::io::ErrorKind::PermissionDenied {
-                eprintln!("❌ Permission denied opening {:?}.", dev_node);
-                eprintln!("💡 Ensure you run with root permissions (sudo) or are a member of the 'input' group.");
+                eprintln!("[ERROR] Permission denied opening {:?}.", dev_node);
+                eprintln!("[INFO] Ensure you run with root permissions (sudo) or are a member of the 'input' group.");
             }
         })?;
 
     let src_fd = src_file.as_raw_fd();
 
     if !args.daemon {
-        println!("🔒 Acquiring exclusive grab (EVIOCGRAB) on {:?}...", dev_node);
+        println!("[INFO] Acquiring exclusive grab (EVIOCGRAB) on {:?}...", dev_node);
     }
     ioctl_grab(src_fd, true).map_err(|e| {
-        eprintln!("❌ Failed to acquire exclusive grab on {:?}: {}", dev_node, e);
+        eprintln!("[ERROR] Failed to acquire exclusive grab on {:?}: {}", dev_node, e);
         e
     })?;
     if !args.daemon {
-        println!("✅ Grab acquired! Host input subsystem will now only receive guarded events.");
+        println!("[OK] Grab acquired. Host input subsystem will now only receive guarded events.");
     }
 
     let uinput_file = std::fs::OpenOptions::new()
@@ -440,27 +440,27 @@ pub fn handle_guard_volume(args: &crate::GuardVolumeArgs) -> Result<(), Box<dyn 
         .open("/dev/uinput")
         .map_err(|e| {
             let _ = ioctl_grab(src_fd, false);
-            eprintln!("❌ Failed to open /dev/uinput: {}", e);
+            eprintln!("[ERROR] Failed to open /dev/uinput: {}", e);
             e
         })?;
     let uinput_fd = uinput_file.as_raw_fd();
 
     if !args.daemon {
-        println!("⚙️  Creating virtual input device on /dev/uinput...");
+        println!("[INFO] Creating virtual input device on /dev/uinput...");
     }
     if let Err(e) = create_uinput_device(uinput_fd) {
         let _ = ioctl_grab(src_fd, false);
-        eprintln!("❌ Failed to create virtual uinput device: {}", e);
+        eprintln!("[ERROR] Failed to create virtual uinput device: {}", e);
         return Err(e.into());
     }
     if !args.daemon {
-        println!("✅ Virtual device 'Fantech MK894 Volume Guard Virtual Device' active!");
+        println!("[OK] Virtual device 'Fantech MK894 Volume Guard Virtual Device' active.");
     }
 
     let _session = VolumeGuardSession { src_fd, uinput_fd };
 
     if !args.daemon {
-        println!("🚀 Volume Guard is running! Debounce window: 30ms • Forced auto-release: 5ms");
+        println!("[OK] Volume Guard is running (Debounce window: 30ms, Forced auto-release: 5ms).");
         println!("   Press Ctrl+C to terminate cleanly.");
     } else {
         tracing::info!("Volume Guard active: 30ms debounce, 5ms forced auto-release");
@@ -480,13 +480,13 @@ pub fn handle_guard_volume(args: &crate::GuardVolumeArgs) -> Result<(), Box<dyn 
 
         match debouncer.process_event(&ev, now) {
             DebounceAction::EmitPulseWithAutoRelease { code, release_delay } => {
-                tracing::debug!("🔊 Guard emitted discrete volume pulse for code {}", code);
+                tracing::debug!("Guard emitted discrete volume pulse for code {}", code);
                 emit_event(&mut writer, EV_KEY, code, 1)?;
                 std::thread::sleep(release_delay);
                 emit_event(&mut writer, EV_KEY, code, 0)?;
             }
             DebounceAction::Drop => {
-                tracing::debug!("🛡️ Guard dropped chattering/stuck event: code={}, val={}", ev.code, ev.value);
+                tracing::debug!("Guard dropped chattering/stuck event: code={}, val={}", ev.code, ev.value);
             }
             DebounceAction::ForwardAsIs => {
                 writer.write_all(&ev_buf)?;

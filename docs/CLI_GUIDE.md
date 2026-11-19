@@ -7,6 +7,9 @@ GitHub: [https://github.com/serieh](https://github.com/serieh)
 Email: [ahmadserieh.official@gmail.com](mailto:ahmadserieh.official@gmail.com)  
 License: **Apache License 2.0**
 
+> [!NOTE]
+> All CLI commands can be invoked directly with `fantastech <command>` (the unified binary) or via the `fantastech-ctl` symlink.
+
 ---
 
 ## Table of Contents

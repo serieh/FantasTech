@@ -1,6 +1,7 @@
 # OpenRGB Integration Blueprint: Fantech MK894 Maxpower II
 
 **Target:** Fantech MK894 Maxpower II (Profile `AK107`)  
+**Author:** Ahmad Serieh  
 **Status:** Architecture Blueprint for Upstream PR  
 **USB Identifiers:**
 * **Vendor ID (VID)**: `0x36AE`

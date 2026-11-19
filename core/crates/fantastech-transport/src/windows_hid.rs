@@ -486,7 +486,7 @@ impl Transport for HidrawTransport {
                     buf.copy_from_slice(&wire_buf[0..64]);
                 }
             }
-            tracing::debug!("📥 [WIN HID RX] ({} bytes): {:02X?}", REPORT_LENGTH, &buf[..REPORT_LENGTH.min(16)]);
+            tracing::debug!("[WIN HID RX] ({} bytes): {:02X?}", REPORT_LENGTH, &buf[..REPORT_LENGTH.min(16)]);
             Ok(REPORT_LENGTH)
         } else {
             Err(TransportError::Timeout(Duration::from_millis(2000)))
@@ -495,7 +495,7 @@ impl Transport for HidrawTransport {
 
     #[allow(unsafe_code)]
     fn write_report(&mut self, buf: &[u8; REPORT_LENGTH]) -> Result<(), TransportError> {
-        tracing::debug!("📤 [WIN HID TX] ({} bytes): {:02X?}", buf.len(), &buf[..16]);
+        tracing::debug!("[WIN HID TX] ({} bytes): {:02X?}", buf.len(), &buf[..16]);
 
         let report_len = self.output_report_len as usize;
         let mut wire_buf = [0u8; 65];

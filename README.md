@@ -10,7 +10,7 @@
 
 ---
 
-## 🌟 Overview
+## Overview
 
 **FantasTech** is a high-performance, cross-platform driver, background daemon, OpenRGB server, and native graphical control center for the **Fantech MK894 Maxpower II** mechanical RGB keyboard (USB Vendor ID `0x36AE`, Product ID `0xFE9C`, IAP Bootloader PID `0xFEAB`).
 
@@ -18,25 +18,34 @@ Engineered entirely in clean-room Rust, FantasTech replaces proprietary vendor b
 
 ---
 
-## 🚀 Key Features
+## Key Features
 
-* **Unified Single Executable**: Both GUI and CLI are delivered in a single lightweight binary (`fantastech`). Double-clicking or executing without arguments launches the native GUI; running with subcommands operates the CLI.
 * **Native GUI Control Center**: Modern, responsive user interface featuring the authentic physical 104-key ANSI layout, live per-key RGB canvas painting with dual-pad mirrored spacebar addressing, preset library, macro editor, and Yarny mascot branding.
 * **Microcontroller Protection & Hardware Safety**:
   * **Safe IAP Bootloader State Machine**: Full USB re-enumeration management between application (`0xFE9C`) and bootloader (`0xFEAB`).
   * **Hardware Checksum Verification**: Reads back and verifies MCU flash checksum prior to rebooting, preventing unverified or corrupt firmware execution.
-  * **Section 9 Firmware Safety Warning Modal**: Prevents accidental background flash updates; enabling automatic firmware updates requires explicit user acknowledgment of hardware risks.
-* **Full Lighting Suite**: Complete control of all 17 hardware lighting modes, speed, brightness, direction, custom palettes, and per-key RGB backlighting.
+  * **Firmware Safety Warning Modal**: Prevents accidental background flash updates; enabling automatic firmware updates requires explicit user acknowledgment of hardware risks.
+* **Full Lighting Suite**: Complete control of all 17 hardware lighting modes, speed, brightness, custom palettes, and per-key RGB matrix canvas painting.
 * **Autonomous Onboard Macro Engine**: Full compiler and decompiler for the keyboard's 4KB onboard EEPROM/flash macro table (up to 32 independent macro sequences).
 * **Multi-Layer Key Remapping**: Custom key actions and layer assignment across Base and Fn layers with bounded undo/redo history.
-* **Volume Knob Runaway Guard**: Real-time event debouncer preventing volume runaway spikes on Linux (GNOME, KDE Plasma, Wayland) via exclusive evdev capture (`EVIOCGRAB`).
+* **Volume Knob Runaway Guard (Linux)**: Real-time event debouncer preventing volume runaway spikes on Linux (GNOME, KDE Plasma, Wayland) via exclusive evdev capture (`EVIOCGRAB`).
 * **Built-in OpenRGB TCP Server**: Exposes the keyboard over standard OpenRGB SDK protocol (port 6742) for seamless synchronization with OpenRGB ecosystems.
 * **Multi-Domain Profile Manager**: Save, load, and switch profiles independently for lighting, keymaps, macros, and device settings.
 * **Clean-Room Virtual Emulator**: Built-in in-memory virtual MCU simulation (`--emulator`) allowing full development, testing, and CI verification without requiring physical hardware.
 
 ---
 
-## 📂 Project Architecture
+## Hardware Specifications & Architecture Notes
+
+Reverse engineering of the Fantech MK894 (Artery AT32F405 MCU, firmware v1.01) identified the following hardware characteristics:
+* **Per-Key RGB Backlight Matrix**: Features 126 coordinate slots across rows 0..5 and columns 0..20, fully addressable via Opcode `0x14` for custom static colors, dynamic canvases, and OpenRGB streaming.
+* **Animation Flow**: Built-in animation presets (e.g. Wave, Stream, Bloom) utilize fixed firmware animation directions; direction reversal is not supported by the MCU's internal lighting engine.
+* **Lock Indicator LEDs (Num, Caps, Win, Scroll Lock)**: Driven by dedicated GPIO output pins directly tied to the MCU's internal USB HID keyboard state. They are physical single-color monochrome white LEDs; custom brightness, colors, and software animation effects are not supported by the hardware.
+* **Side Chassis RGB Strips**: Controlled via dedicated physical keyboard hotkeys (`Fn + Pause` to toggle modes/off, `Fn + Scroll Lock` for speed/color). They operate on an isolated secondary hardware circuit and are not part of the addressable 104-key switch matrix canvas.
+
+---
+
+## Project Architecture
 
 ```
 maxpower_ii_rea/
@@ -60,40 +69,43 @@ maxpower_ii_rea/
 │
 ├── docs/                         # Technical documentation & guides
 │   ├── CLI_GUIDE.md              # Complete CLI command reference
-│   ├── VOLUME_KNOB_FIX.md        # Technical analysis of rotary encoder runaway
+│   ├── PROTOCOL.md               # USB HID binary wire protocol specification
+│   ├── ARCHITECTURE.md           # Internal crate architecture & IPC specifications
+│   ├── OPENRGB_INTEGRATION.md    # OpenRGB SDK integration & controller mapping
 │   └── mk894_layout.json         # ANSI-104 sparse matrix mapping specification
-│
-└── RE-Documentation/             # Reverse engineering research & protocol specifications
 ```
 
 ---
 
-## ⚡ Installation & Quick Start
+## Installation & Quick Start
 
-### 1. Install to System (Linux)
-Run the automated installer script:
+### 1. Linux (Flatpak)
+FantasTech on Linux is distributed as a sandboxed Flatpak package:
 ```bash
-./distribution/linux/install.sh
-```
-* Installs `fantastech` and symlink `fantastech-ctl` to `~/.local/bin` (or `/usr/local/bin` if run with sudo).
-* Adds the **FantasTech** desktop launcher to your desktop application menu.
-* Installs high-resolution Yarny mascot icons.
-* Configures non-root udev rules for the MK894 normal PID (`0xFE9C`) and IAP bootloader (`0xFEAB`).
-* Registers and starts the background systemd user service.
+# Build Flatpak bundle into dist/
+./distribution/flatpak/build-flatpak.sh
 
-To uninstall cleanly at any time:
-```bash
-./distribution/linux/install.sh --uninstall
-```
+# Install Flatpak bundle locally
+flatpak install --user -y dist/FantasTech-0.1.5.flatpak
 
-### 2. Launching the GUI
-Click **FantasTech** in your application launcher, or execute from terminal:
-```bash
-fantastech
+# Run application
+flatpak run org.fantastech.FantasTech
+
+# Complete uninstallation & cleanup
+./distribution/flatpak/uninstall-flatpak.sh
 ```
 
-### 3. Running from Source without Installing
-You can also run the compiled binary directly:
+### 2. Windows (Inno Setup Installer)
+Build or run the standalone Windows installer:
+```cmd
+distribution\windows\build-installer.bat
+```
+* Installs to `%ProgramFiles%\FantasTech` or `%LocalAppData%\Programs\FantasTech`.
+* Creates Start Menu entries, desktop shortcut, and notification tray integration.
+* Automatically registers clean Windows uninstallation in Windows Settings.
+
+### 3. Running from Source
+You can also run the binary directly via Cargo:
 ```bash
 # Launch GUI
 cargo run --release --manifest-path core/Cargo.toml --bin fantastech
@@ -104,7 +116,7 @@ cargo run --release --manifest-path core/Cargo.toml --bin fantastech -- info
 
 ---
 
-## 🛠️ CLI Reference
+## CLI Reference
 
 For complete CLI documentation, see [docs/CLI_GUIDE.md](docs/CLI_GUIDE.md).
 
@@ -116,8 +128,7 @@ fantastech info
 fantastech -e info
 
 # Lighting controls
-fantastech light set-mode 3 --speed 4 --brightness 4
-fantastech light preset gaming
+fantastech light mode 3 --speed 4 --brightness 4
 fantastech light off
 
 # Profile management
@@ -126,19 +137,20 @@ fantastech profile list lighting
 
 # Key remapping
 fantastech remap set CapsLock LeftControl
-fantastech remap dump
+fantastech remap list
 
 # Run OpenRGB SDK server
 fantastech openrgb-server --port 6742
 
 # Background service management
 fantastech service status
-fantastech service restart
+fantastech service start
+fantastech service stop
 ```
 
 ---
 
-## 🌐 OpenRGB Synchronization
+## OpenRGB Synchronization
 
 1. Start the FantasTech OpenRGB server:
    ```bash
@@ -149,23 +161,29 @@ fantastech service restart
 
 ---
 
-## 📦 Platform Installers
+## Platform Installers
 
 Package configurations are provided in `distribution/`:
-* **Linux Flatpak (Only)**: `distribution/flatpak/org.fantastech.FantasTech.yaml`
-* **Windows Installer**: `distribution/windows/installer.iss` (Inno Setup)
+* **Linux Flatpak**: `distribution/flatpak/org.fantastech.FantasTech.yaml`
+* **Windows Standalone Installer**: `distribution/windows/installer.iss` (Inno Setup)
 
 ---
 
-## 🧪 Automated Testing
+## Automated Testing
 
 Run all unit tests, safety verification tests, and virtual MCU emulator integration tests:
 ```bash
-cd core && cargo test --workspace
+cargo test --manifest-path core/Cargo.toml --workspace
 ```
 
 ---
 
-## 📄 License
+## Authors & Credits
+
+Developed by **Ahmad Serieh** ([GitHub](https://github.com/serieh)).
+
+---
+
+## License
 
 Licensed under the **Apache License, Version 2.0**. See the [LICENSE](LICENSE) file for terms.

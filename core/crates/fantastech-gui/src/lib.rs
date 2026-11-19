@@ -16,9 +16,9 @@ use fantastech_core::write_user_owned_file;
 use fantastech_core::{
     default_layer_keymap, default_scancode_for_key, format_action_str, get_mirror_key_index,
     is_service_running, key_name_for_scancode, scancode_for_key_name, send_ipc_request,
-    ButtonProfile, ColorDisplayFormat, FantasTechConfig, GuiTheme,
-    IpcRequest, IpcResponse, LayerKeymapConfig, LightingProfile, MacroItem, MacroProfile,
-    MacroSequence, ProfileManager, ThemeConfig, KEY_DEFINITIONS,
+    ColorDisplayFormat, FantasTechConfig, GuiTheme,
+    IpcRequest, IpcResponse, LayerKeymapConfig, MacroItem,
+    MacroSequence, ProfileManager, KEY_DEFINITIONS,
 };
 use fantastech_device::{Device, FullDeviceBackup};
 use fantastech_protocol::constants::{MACRO_MEMORY_SIZE, SPARSE_KEY_COUNT};
@@ -92,15 +92,30 @@ fn setup_custom_fonts(ctx: &egui::Context) {
 
 fn fit_keycap_text(text: &str, max_width: f32) -> (String, egui::FontId) {
     let sizes = [12.5, 11.0, 10.0, 9.0];
+    let max_line_len = text.lines().map(|l| l.chars().count()).max().unwrap_or(0);
     for &sz in &sizes {
-        let approx_width = text.chars().count() as f32 * (sz * 0.68);
+        let approx_width = max_line_len as f32 * (sz * 0.68);
         if approx_width <= max_width {
             return (text.to_string(), egui::FontId::proportional(sz));
         }
     }
     let sz = 8.5;
     let max_chars = ((max_width / (sz * 0.68)).floor() as usize).max(2);
-    if text.chars().count() > max_chars {
+    if text.contains('\n') {
+        let lines: Vec<String> = text
+            .lines()
+            .map(|l| {
+                if l.chars().count() > max_chars {
+                    let mut truncated = l.chars().take(max_chars.saturating_sub(1)).collect::<String>();
+                    truncated.push('…');
+                    truncated
+                } else {
+                    l.to_string()
+                }
+            })
+            .collect();
+        (lines.join("\n"), egui::FontId::proportional(sz))
+    } else if text.chars().count() > max_chars {
         let mut truncated = text.chars().take(max_chars.saturating_sub(1)).collect::<String>();
         truncated.push('…');
         (truncated, egui::FontId::proportional(sz))
@@ -294,7 +309,7 @@ pub static ANSI_104_KEYS: &[VisualKeyDef] = &[
     VisualKeyDef { name: "Num 1", fn_name: "Num 1", index: 101, x: 19.0, y: 4.35, w: 1.0, h: 1.0 },
     VisualKeyDef { name: "Num 2", fn_name: "Num 2", index: 102, x: 20.0, y: 4.35, w: 1.0, h: 1.0 },
     VisualKeyDef { name: "Num 3", fn_name: "Num 3", index: 103, x: 21.0, y: 4.35, w: 1.0, h: 1.0 },
-    VisualKeyDef { name: "Num Enter", fn_name: "Num Enter", index: 104, x: 22.0, y: 4.35, w: 1.0, h: 2.0 },
+    VisualKeyDef { name: "Num\nEnter", fn_name: "Num\nEnter", index: 104, x: 22.0, y: 4.35, w: 1.0, h: 2.0 },
 
     // Row 5 (Bottom row, 13 keys) - y = 5.35, h = 1.0
     VisualKeyDef { name: "Ctrl", fn_name: "Ctrl", index: 105, x: 0.0, y: 5.35, w: 1.25, h: 1.0 },
@@ -418,34 +433,6 @@ fn load_app_icon() -> Option<egui::IconData> {
 pub(crate) fn load_text_logo_image() -> Option<egui::ColorImage> {
     let logo_bytes = include_bytes!("../assets/FantasTech Text Logo.png");
     if let Ok(img) = image::load_from_memory(logo_bytes) {
-        let rgba = img.to_rgba8();
-        let (w, h) = rgba.dimensions();
-        Some(egui::ColorImage::from_rgba_unmultiplied(
-            [w as usize, h as usize],
-            &rgba.into_raw(),
-        ))
-    } else {
-        None
-    }
-}
-
-pub(crate) fn load_undo_icon() -> Option<egui::ColorImage> {
-    let bytes = include_bytes!("../assets/undo_64.png");
-    if let Ok(img) = image::load_from_memory(bytes) {
-        let rgba = img.to_rgba8();
-        let (w, h) = rgba.dimensions();
-        Some(egui::ColorImage::from_rgba_unmultiplied(
-            [w as usize, h as usize],
-            &rgba.into_raw(),
-        ))
-    } else {
-        None
-    }
-}
-
-pub(crate) fn load_redo_icon() -> Option<egui::ColorImage> {
-    let bytes = include_bytes!("../assets/redo_64.png");
-    if let Ok(img) = image::load_from_memory(bytes) {
         let rgba = img.to_rgba8();
         let (w, h) = rgba.dimensions();
         Some(egui::ColorImage::from_rgba_unmultiplied(
@@ -590,11 +577,10 @@ struct FantasTechApp {
     copied_color: Option<[u8; 3]>,
     recent_colors: Vec<[u8; 3]>,
     text_logo_texture: Option<egui::TextureHandle>,
-    undo_texture: Option<egui::TextureHandle>,
-    redo_texture: Option<egui::TextureHandle>,
     key_colors: [Color32; SPARSE_KEY_COUNT],
     custom_selected_keys: std::collections::BTreeSet<u8>,
     custom_select_all: bool,
+    pub(crate) reactive_origin: Option<(f32, f32, f32)>,
 
     // Macro page state
     macro_memory: MacroMemoryTable,
@@ -641,8 +627,24 @@ struct FantasTechApp {
 
 impl FantasTechApp {
     fn new() -> Self {
-        let base = default_layer_keymap(KeyLayer::Base);
-        let fn_layer = default_layer_keymap(KeyLayer::Fn);
+        #[cfg(test)]
+        let (connection_monitor, initial_snapshot) = (
+            platform::ConnectionMonitor::new_mock(),
+            platform::ConnectionSnapshot::new_mock(),
+        );
+        #[cfg(not(test))]
+        let (connection_monitor, initial_snapshot) = {
+            let initial = platform::detect_connection(true);
+            let monitor = platform::ConnectionMonitor::start();
+            (monitor, initial)
+        };
+
+        let mut base = default_layer_keymap(KeyLayer::Base);
+        let mut fn_layer = default_layer_keymap(KeyLayer::Fn);
+        if let Some((hw_base, hw_fn)) = initial_snapshot.hardware_keymaps {
+            base = hw_base;
+            fn_layer = hw_fn;
+        }
         let profiles = [
             [base, fn_layer],
             [base, fn_layer],
@@ -655,21 +657,57 @@ impl FantasTechApp {
         }
         let profile_manager = ProfileManager::new(None);
         let _ = profile_manager.ensure_seed_profiles();
-        let connection_monitor = platform::ConnectionMonitor::start();
-        // Start conservatively in a non-writing detection state. The first
-        // background snapshot replaces these values as soon as discovery ends.
-        let service_active = false;
-        let connected = false;
-        let is_emulator = true;
-        let permission_denied_node = None;
-        let status_message = "Checking keyboard connection…".to_string();
+        let service_active = initial_snapshot.service_active;
+        let connected = initial_snapshot.connected;
+        let is_emulator = initial_snapshot.is_emulator;
+        let permission_denied_node = initial_snapshot.permission_denied_node.clone();
+        let firmware_version = initial_snapshot
+            .device_info
+            .as_ref()
+            .map(|info| info.firmware_version.clone())
+            .unwrap_or_else(|| "V101".to_string());
+        let active_profile = initial_snapshot
+            .device_info
+            .as_ref()
+            .map(|info| info.active_profile.min(2))
+            .unwrap_or(0);
+        let status_message = if let Some(ref error) = initial_snapshot.error_message {
+            error.clone()
+        } else if initial_snapshot.service_active {
+            "Connected to FantasTech background service".to_owned()
+        } else if initial_snapshot.permission_denied_node.is_some() {
+            "Keyboard detected, but device permissions prevent access".to_owned()
+        } else if initial_snapshot.connected && !initial_snapshot.is_emulator {
+            if let Some(ref hw) = initial_snapshot.lighting_config {
+                format!("Connected directly to keyboard: FW {}, Profile {}, Mode: {}", firmware_version, active_profile + 1, hw.mode.name())
+            } else {
+                "Connected directly to the keyboard".to_owned()
+            }
+        } else {
+            "No physical keyboard detected; emulator mode is available".to_owned()
+        };
 
         let selected_lighting_profile = config.active_lighting_profile.clone();
         let selected_button_profile = config.active_button_profile.clone();
         let selected_macro_profile = config.active_macro_profile.clone();
         let selected_settings_profile = config.active_settings_profile.clone();
 
-        let (init_mode, init_b, init_s, init_dir, init_color, init_fixed, init_key_colors) = if let Some(p) = profile_manager.load_lighting_profile(&selected_lighting_profile) {
+        let (init_mode, init_b, init_s, init_dir, init_color, init_fixed, init_key_colors, init_profile) = if let Some(ref hw) = initial_snapshot.lighting_config {
+            let b = if hw.brightness == 0 && hw.mode != LightingMode::Off { 4 } else { hw.brightness };
+            let s = hw.speed;
+            let dir = match hw.direction { AnimationDirection::LeftToRight => 1, _ => 0 };
+            let fixed = hw.color_mode == ColorMode::FixedColor || hw.mode == LightingMode::Static;
+            let color = [hw.color.r, hw.color.g, hw.color.b];
+            let colors = [Color32::from_rgb(color[0], color[1], color[2]); SPARSE_KEY_COUNT];
+            let profiles = profile_manager.list_lighting_profiles();
+            let matched_profile = profiles
+                .iter()
+                .find(|p| p.mode == hw.mode && (!hw.mode.supports_color() || p.color == color))
+                .or_else(|| profiles.iter().find(|p| p.mode == hw.mode))
+                .map(|p| p.id.clone())
+                .unwrap_or_else(|| selected_lighting_profile.clone());
+            (hw.mode as u8, b, s, dir, color, fixed, colors, matched_profile)
+        } else if let Some(p) = profile_manager.load_lighting_profile(&selected_lighting_profile) {
             let b = if p.brightness <= 4 { p.brightness } else { ((p.brightness as f32 / 100.0) * 4.0).round().clamp(0.0, 4.0) as u8 };
             let s = if p.speed <= 4 { p.speed } else { ((p.speed as f32 / 100.0) * 4.0).round().clamp(0.0, 4.0) as u8 };
             let fixed = p.color_mode.map(|cm| cm == ColorMode::FixedColor).unwrap_or(p.mode == LightingMode::Static);
@@ -682,12 +720,13 @@ impl FantasTechApp {
                     }
                 }
             }
-            (p.mode as u8, if b == 0 && p.mode != LightingMode::Off { 4 } else { b }, s, p.direction, p.color, fixed, colors)
+            (p.mode as u8, if b == 0 && p.mode != LightingMode::Off { 4 } else { b }, s, p.direction, p.color, fixed, colors, selected_lighting_profile.clone())
         } else {
-            (4, 4, 2, 0, [0, 113, 207], false, [Color32::from_rgb(0, 113, 207); SPARSE_KEY_COUNT])
+            (4, 4, 2, 0, [0, 113, 207], false, [Color32::from_rgb(0, 113, 207); SPARSE_KEY_COUNT], selected_lighting_profile.clone())
         };
+        let selected_lighting_profile = init_profile;
 
-        Self {
+        let mut app = Self {
             config,
             profile_manager,
             selected_lighting_profile,
@@ -709,14 +748,14 @@ impl FantasTechApp {
             service_active,
             permission_denied_node,
             connection_monitor,
-            connection_checking: true,
+            connection_checking: false,
             permission_modal_open: false,
             status_message,
             device_model: "Fantech MK894 Maxpower II".to_string(),
-            firmware_version: "V101".to_string(),
-            active_profile: 0,
+            firmware_version,
+            active_profile,
             active_layer: KeyLayer::Base,
-            dry_run_enabled: false,
+            dry_run_enabled: cfg!(test),
 
             current_tab: NavTab::Button,
 
@@ -755,11 +794,10 @@ impl FantasTechApp {
                 [6, 182, 212],  // Cyan
             ],
             text_logo_texture: None,
-            undo_texture: None,
-            redo_texture: None,
             key_colors: init_key_colors,
             custom_selected_keys: std::collections::BTreeSet::new(),
             custom_select_all: false,
+            reactive_origin: None,
             install_status_message: None,
 
             macro_memory: MacroMemoryTable::new_empty(),
@@ -813,6 +851,10 @@ impl FantasTechApp {
             auto_update_modal_just_opened: false,
             checking_updates_start: None,
             shortcuts_help_modal_open: false,
+        };
+        if initial_snapshot.connected {
+            app.apply_hardware_snapshot(&initial_snapshot);
         }
+        app
     }
 }

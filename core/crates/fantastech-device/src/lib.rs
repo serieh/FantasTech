@@ -8,7 +8,7 @@ use fantastech_protocol::commands::{
     assert_opcode_safe, build_device_info_query, build_factory_reset, build_profile_select,
     parse_device_info_response, DeviceInfo,
 };
-use fantastech_protocol::constants::{MACRO_MEMORY_SIZE, REPORT_LENGTH, SPARSE_KEY_COUNT};
+use fantastech_protocol::constants::{opcodes, MACRO_MEMORY_SIZE, REPORT_LENGTH, SPARSE_KEY_COUNT};
 use fantastech_protocol::error::ProtocolError;
 use fantastech_protocol::keymap::{
     build_batch_keymap_reports, build_keymap_read_request, build_single_remap_report,
@@ -179,10 +179,11 @@ impl<T: Transport, State> Device<T, State> {
             let mut resp_buf = [0u8; REPORT_LENGTH];
             self.transport.read_report(&mut resp_buf)?;
 
-            // If this is an asynchronous lighting notification [0xAA, 0xFA], wait for the query response
-            if resp_buf[0] == 0xAA && resp_buf[1] == 0xFA {
-                eprintln!(
-                    "ℹ️  Received hardware notification [0xAA, 0xFA], awaiting query response (attempt {}/5)...",
+            // If this is an asynchronous lighting notification or intermediate hardware ACK, wait for query response
+            if resp_buf[0] == 0xAA && resp_buf[1] != opcodes::GET_DEVICE_INFO {
+                tracing::debug!(
+                    "Skipping intermediate hardware packet [0xAA, 0x{:02X}], awaiting device info response (attempt {}/5)...",
+                    resp_buf[1],
                     attempt + 1
                 );
                 continue;
@@ -206,9 +207,11 @@ impl<T: Transport, State> Device<T, State> {
             let mut resp_buf = [0u8; REPORT_LENGTH];
             self.transport.read_report(&mut resp_buf)?;
 
-            if resp_buf[0] == 0xAA && resp_buf[1] == 0xFA {
-                eprintln!(
-                    "ℹ️  Received hardware notification [0xAA, 0xFA], awaiting query response (attempt {}/5)...",
+            // If this is an asynchronous lighting notification or intermediate hardware ACK, wait for lighting query response
+            if resp_buf[0] == 0xAA && resp_buf[1] != opcodes::GET_LIGHT_CONFIG {
+                tracing::debug!(
+                    "Skipping intermediate hardware packet [0xAA, 0x{:02X}], awaiting lighting query response (attempt {}/5)...",
+                    resp_buf[1],
                     attempt + 1
                 );
                 continue;

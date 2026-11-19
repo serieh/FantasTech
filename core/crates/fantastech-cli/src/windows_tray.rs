@@ -331,7 +331,7 @@ pub fn run_tray_loop() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    println!("🔔 Running FantasTech Native Windows System Tray...");
+    println!("[INFO] Running FantasTech native Windows system tray...");
 
     let class_name = to_wide("FantasTechTrayClass");
     let window_title = to_wide("FantasTech Tray Window");
